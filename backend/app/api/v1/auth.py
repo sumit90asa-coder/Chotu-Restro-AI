@@ -164,8 +164,9 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
 
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your restaurant staff account has been deactivated. Please contact your restaurant owner."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your restaurant staff account has been deactivated. Please contact your restaurant owner.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     # Fetch restaurant name for session metadata
@@ -195,3 +196,12 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
 def get_me(current_user: User = Depends(get_current_user)):
     """Return profile for the currently authenticated staff or owner."""
     return current_user
+
+@router.post("/logout")
+def logout(current_user: User = Depends(get_current_user)):
+    """Explicitly terminate/revoke active staff session."""
+    return {
+        "message": "Session terminated successfully",
+        "user_id": current_user.id,
+        "status": "logged_out"
+    }

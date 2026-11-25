@@ -102,8 +102,7 @@ def test_02_rbac_on_qr_regeneration_every_role(client, db_session):
     assert resp_kitchen.status_code == 403, "Kitchen staff should not be authorized to regenerate QR tokens"
 
     # 6. Unauthenticated (no token) -> 401 Unauthorized
-    resp_anon = client.post("/api/v1/tables/T-02/regenerate-qr")
-    # In auth deps, if no token and no demo user fallback: 401
+    resp_anon = client.post("/api/v1/tables/T-02/regenerate-qr", headers={"Authorization": ""})
     assert resp_anon.status_code in [401, 403]
 
 

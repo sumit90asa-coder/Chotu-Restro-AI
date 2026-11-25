@@ -6,7 +6,7 @@ from app.database.session import get_db
 from app.models.table import DiningTable, TableStatus
 from app.schemas.menu import TableResponse, TableStatusUpdate, TableTransferRequest, TableWaiterAssignRequest
 from app.services.order_service import OrderService
-from app.api.deps import get_current_user, check_permission, oauth2_scheme
+from app.api.deps import get_current_user, check_permission
 from app.models.user import User
 from app.core.permissions import UserRole
 from app.websocket.manager import ws_manager
@@ -110,16 +110,8 @@ async def assign_table_waiter(
 async def regenerate_table_qr(
     table_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    token: Optional[str] = Depends(oauth2_scheme)
+    current_user: User = Depends(get_current_user)
 ):
-    # Strict authentication requirement: Valid bearer token required
-    if not token or token == "demo-token":
-        raise HTTPException(
-            status_code=401,
-            detail="Authentication required: Valid bearer token required to regenerate QR codes"
-        )
-
     # Strict server-side RBAC: Only OWNER and MANAGER are authorized to regenerate table QR codes
     if current_user.role not in [UserRole.OWNER, UserRole.MANAGER]:
         raise HTTPException(

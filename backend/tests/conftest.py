@@ -11,7 +11,9 @@ from sqlalchemy.pool import StaticPool
 from app.main import app
 from app.database.session import Base, get_db
 from app.initial_data import init_demo_db
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, create_access_token
+from app.models.user import User
+from app.core.permissions import UserRole
 
 # Precompute password hash once to make test suite blazingly fast
 CACHED_HASH = get_password_hash("Chotu@123")
@@ -45,7 +47,39 @@ def db_session(monkeypatch):
     Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture(scope="function")
-def client(db_session):
+def auth_headers(db_session):
+    """Helper fixture to generate signed JWT bearer tokens for any role."""
+    def _get_headers(role=UserRole.MANAGER, restaurant_id="rest-spice-jct"):
+        user = db_session.query(User).filter(User.role == role, User.restaurant_id == restaurant_id).first()
+        uid = user.id if user else f"user-{role.value}-01"
+        token = create_access_token(
+            subject=uid,
+            extra_claims={"role": role.value, "restaurant_id": restaurant_id}
+        )
+        return {"Authorization": f"Bearer {token}"}
+    return _get_headers
+
+@pytest.fixture(scope="function")
+def client(db_session, auth_headers):
+    """
+    Authenticated TestClient default fixture.
+    Supplies valid manager bearer token for standard business workflow operations.
+    """
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+            
+    app.dependency_overrides[get_db] = override_get_db
+    headers = auth_headers(role=UserRole.MANAGER)
+    with TestClient(app, headers=headers) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+@pytest.fixture(scope="function")
+def unauthenticated_client(db_session):
+    """TestClient without any Authorization header."""
     def override_get_db():
         try:
             yield db_session

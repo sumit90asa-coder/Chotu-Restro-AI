@@ -178,6 +178,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") {
       localStorage.removeItem("chotu_auth_token");
       localStorage.removeItem("chotu_user_session");
+      document.cookie = "chotu_auth_token=; path=/; max-age=0; SameSite=Lax";
+      window.location.href = "/login";
     }
   };
 

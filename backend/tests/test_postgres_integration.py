@@ -6,6 +6,8 @@ from app.main import app
 from app.database.session import get_db
 from app.models import Restaurant, User, DiningTable, Order, KOT, Ingredient, AIConversation
 
+from app.core.security import create_access_token
+
 # Dedicated PostgreSQL Test Database (guarantees production/dev DB is untouched)
 TEST_DATABASE_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/chotu_test"
 test_engine = create_engine(TEST_DATABASE_URL, echo=False)
@@ -21,7 +23,11 @@ def pg_client():
             db.close()
             
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as client:
+    token = create_access_token(
+        subject="user-mgr-01",
+        extra_claims={"role": "manager", "restaurant_id": "rest-spice-jct"}
+    )
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as client:
         yield client
     app.dependency_overrides.clear()
 

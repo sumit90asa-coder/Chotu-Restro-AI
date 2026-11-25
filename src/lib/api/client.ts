@@ -39,8 +39,10 @@ export function setAuthToken(token: string | null) {
   if (typeof window !== "undefined") {
     if (token) {
       localStorage.setItem("chotu_auth_token", token);
+      document.cookie = `chotu_auth_token=${encodeURIComponent(token)}; path=/; max-age=86400; SameSite=Lax`;
     } else {
       localStorage.removeItem("chotu_auth_token");
+      document.cookie = "chotu_auth_token=; path=/; max-age=0; SameSite=Lax";
     }
   }
 }
@@ -90,6 +92,27 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     } catch {
       // Body is not json
     }
+
+    // Global session expiration / invalid token handler
+    if (response.status === 401 && typeof window !== "undefined") {
+      setAuthToken(null);
+      localStorage.removeItem("chotu_auth_token");
+      localStorage.removeItem("chotu_user_session");
+      document.cookie = "chotu_auth_token=; path=/; max-age=0; SameSite=Lax";
+      
+      const currentPath = window.location.pathname;
+      const isPublicRoute =
+        currentPath === "/" ||
+        currentPath === "/landing" ||
+        currentPath.startsWith("/login") ||
+        currentPath.startsWith("/register") ||
+        currentPath.startsWith("/qr/");
+        
+      if (!isPublicRoute) {
+        window.location.href = `/login?from=${encodeURIComponent(currentPath)}&reason=session_expired`;
+      }
+    }
+
     throw new Error(errorMessage);
   }
 
