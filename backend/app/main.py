@@ -12,6 +12,18 @@ from app.websocket.manager import ws_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure database migrations / schemas are up to date on container startup
+    try:
+        from alembic import command
+        from alembic.config import Config
+        alembic_ini_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
+        if os.path.exists(alembic_ini_path):
+            alembic_cfg = Config(alembic_ini_path)
+            command.upgrade(alembic_cfg, "head")
+    except Exception as e:
+        import logging
+        logging.getLogger("uvicorn").warning(f"Startup alembic migration notice: {e}")
+
     # Ensure all tables exist on startup
     Base.metadata.create_all(bind=engine)
     yield
