@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/lib/context/AuthContext";
 import {
   ArrowRight,
   Check,
@@ -39,6 +40,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   currentTheme = "warm-terracotta",
   onSelectTheme,
 }) => {
+  const { isAuthenticated } = useAuth();
+  const dashboardHref = isAuthenticated ? "/dashboard" : "/login";
+
   // Navigation active tab for interactive preview
   const [activePreviewTab, setActivePreviewTab] = useState<"pos" | "qr" | "kds" | "voice">("pos");
 
@@ -85,12 +89,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <div className="bg-ink text-white py-2 px-4 text-xs font-medium text-center flex items-center justify-center gap-2 border-b border-border/40">
         <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
         <span>Experience modern restaurant intelligence with Cloud POS, QR Dining, and Voice AI.</span>
-        <Link
-          href="/register"
+        <button
+          onClick={() => scrollToSection("book-demo")}
           className="underline font-semibold hover:text-brand transition-colors ml-1 cursor-pointer"
         >
-          Register Your Restaurant →
-        </Link>
+          Book 15-Minute Demo →
+        </button>
       </div>
 
       {/* ============================================================
@@ -162,19 +166,47 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </div>
             )}
 
-            <Link
-              href="/login"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-ink bg-canvas-subtle hover:bg-canvas border border-border rounded-lg transition-colors"
-            >
-              <span>Sign In</span>
-            </Link>
+            {onLaunchLiveDemo ? (
+              <button
+                onClick={onLaunchLiveDemo}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-ink bg-canvas-subtle hover:bg-canvas border border-border rounded-lg transition-colors cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 text-brand fill-brand" />
+                <span>Live POS Sandbox</span>
+              </button>
+            ) : (
+              <Link
+                href={dashboardHref}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-ink bg-canvas-subtle hover:bg-canvas border border-border rounded-lg transition-colors"
+              >
+                <Play className="w-3.5 h-3.5 text-brand fill-brand" />
+                <span>Open Dashboard</span>
+              </Link>
+            )}
 
-            <Link
-              href="/register"
+            {!isAuthenticated && (
+              <>
+                <Link
+                  href="/login"
+                  className="hidden md:inline-flex items-center text-xs font-medium text-ink-secondary hover:text-ink px-2 py-1 transition-colors"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  href="/register"
+                  className="hidden lg:inline-flex items-center text-xs font-semibold text-brand hover:text-brand-hover px-2.5 py-1 rounded-md bg-brand/5 border border-brand/20 transition-colors"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
+
+            <button
+              onClick={() => scrollToSection("book-demo")}
               className="px-4 py-2 text-xs font-semibold text-white bg-brand hover:bg-brand-hover rounded-lg transition-colors shadow-xs active:scale-95 cursor-pointer"
             >
-              Register Restaurant
-            </Link>
+              Book a Demo
+            </button>
           </div>
         </div>
       </header>
@@ -203,19 +235,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {/* Hero CTAs */}
             <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Link
-                href="/register"
+              <button
+                onClick={() => scrollToSection("book-demo")}
                 className="w-full sm:w-auto px-7 py-3.5 text-sm font-semibold text-white bg-brand hover:bg-brand-hover rounded-lg shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
               >
-                <span>Register Your Restaurant</span>
+                <span>Book 15-Minute Live Walkthrough</span>
                 <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <Link
+                href="/register"
+                className="w-full sm:w-auto px-6 py-3.5 text-sm font-semibold text-white bg-ink hover:bg-ink/90 rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2"
+              >
+                <span>Get Started / Create Account</span>
               </Link>
 
               <Link
-                href="/login"
+                href={dashboardHref}
                 className="w-full sm:w-auto px-6 py-3.5 text-sm font-semibold text-ink bg-white hover:bg-canvas-subtle border border-border rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2"
               >
-                <span>Sign In to Dashboard</span>
+                <Play className="w-4 h-4 text-brand fill-brand" />
+                <span>Open Dashboard</span>
               </Link>
             </div>
 
@@ -882,11 +922,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <button onClick={() => scrollToSection("live-preview")} className="hover:text-brand transition-colors cursor-pointer">
                 System Tour
               </button>
-              <Link href="/login" className="hover:text-brand transition-colors">
-                Sign In
+              <Link href={dashboardHref} className="hover:text-brand transition-colors">
+                Open Dashboard
               </Link>
               <Link href="/register" className="hover:text-brand transition-colors">
-                Register
+                Get Started
+              </Link>
+              <Link href="/login" className="hover:text-brand transition-colors">
+                Sign In
               </Link>
               <a
                 href="https://wa.me/919820012345?text=Hi,%20I%20would%20like%20to%20learn%20more%20about%20Chotu%20Restro%20AI"
