@@ -17,6 +17,7 @@ class DiningTable(Base):
     id = Column(String, primary_key=True, index=True)
     restaurant_id = Column(String, ForeignKey("restaurants.id"), nullable=False, index=True)
     label = Column(String, nullable=False)
+    floor_name = Column(String, default="Main AC Hall", nullable=False)
     capacity = Column(Integer, default=4, nullable=False)
     status = Column(SQLEnum(TableStatus), default=TableStatus.VACANT, nullable=False)
     qr_token = Column(String, unique=True, index=True, nullable=False)

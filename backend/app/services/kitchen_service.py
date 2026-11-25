@@ -33,9 +33,9 @@ class KitchenService:
         kot.completed_at = datetime.now(timezone.utc)
         db.flush()
         
-        # Check if all KOTs for the associated order are completed, update order status to READY
+        # Check if all KOTs for the associated order are completed, update order status to READY ONLY IF currently PREPARING
         order = db.query(Order).filter(Order.id == kot.order_id).first()
-        if order:
+        if order and order.status == OrderStatus.PREPARING:
             remaining_kots = db.query(KOT).filter(KOT.order_id == order.id, KOT.status != KOTStatus.BUMPED).count()
             if remaining_kots == 0:
                 order.status = OrderStatus.READY

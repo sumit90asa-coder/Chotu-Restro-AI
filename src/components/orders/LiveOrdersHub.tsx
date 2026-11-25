@@ -343,7 +343,7 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
                               } else if (ord.status === "out-for-delivery") {
                                 onUpdateOrderStatus(ord.id, "completed");
                               } else if (ord.status === "completed") {
-                                onUpdateOrderStatus(ord.id, "ready");
+                                // Completed order stays completed
                               }
                             }}
                             className={`px-4 py-1.5 rounded-full text-xs font-semibold text-white tracking-tight transition-all btn-reactive active:scale-90 active:translate-y-0.5 shadow-sm hover:shadow-md cursor-pointer ${
@@ -712,18 +712,20 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
             </div>
 
             <div className="pt-3 flex gap-2">
-              <button
-                onClick={() => {
-                  onUpdateOrderStatus(
-                    selectedOrder.id,
-                    selectedOrder.status === "preparing" ? "ready" : selectedOrder.status === "ready" ? "completed" : "preparing"
-                  );
-                  setSelectedOrder(null);
-                }}
-                className="flex-1 py-2 bg-brand text-white font-medium text-xs hover:bg-brand-hover transition-colors rounded"
-              >
-                Advance Status
-              </button>
+              {selectedOrder.status !== "completed" && (
+                <button
+                  onClick={() => {
+                    onUpdateOrderStatus(
+                      selectedOrder.id,
+                      selectedOrder.status === "preparing" ? "ready" : "completed"
+                    );
+                    setSelectedOrder(null);
+                  }}
+                  className="flex-1 py-2 bg-brand text-white font-medium text-xs hover:bg-brand-hover transition-colors rounded"
+                >
+                  Advance Status
+                </button>
+              )}
               <button
                 onClick={() => setSelectedOrder(null)}
                 className="px-4 py-2 bg-canvas-subtle border border-border text-ink font-medium text-xs hover:bg-canvas transition-colors rounded"

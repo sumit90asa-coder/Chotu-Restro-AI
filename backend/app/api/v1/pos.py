@@ -1,10 +1,12 @@
+from datetime import datetime, timezone
 from typing import List, Optional
+from decimal import Decimal
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.session import get_db
-from app.models.order import Order, PlacedBy
-from app.models.table import DiningTable
+from app.models.order import Order, PlacedBy, OrderStatus, PaymentStatus, OrderMode
+from app.models.table import DiningTable, TableStatus
 from app.schemas.order import OrderResponse, BillSettlementRequest
 from app.schemas.kot import KOTResponse
 from app.services.order_service import OrderService
@@ -23,16 +25,61 @@ class ModifyItemRequest(BaseModel):
 class FireKOTRequest(BaseModel):
     captain_notes: Optional[str] = None
 
-@router.get("/tables/{table_id}/order", response_model=OrderResponse)
+@router.get("/tables/{table_id}/order", response_model=Optional[OrderResponse])
 def get_table_order(
     table_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    CRITICAL REQUIREMENT: Retrieves or starts the independent order specific to this table.
+    CRITICAL: Pure read-only and idempotent. Returns current active order for this table,
+    or None if table is vacant with no active session.
     """
-    order = OrderService.get_or_create_table_order(db, current_user.restaurant_id, table_id, placed_by=PlacedBy.POS)
+    table = db.query(DiningTable).filter(
+        DiningTable.id == table_id,
+        DiningTable.restaurant_id == current_user.restaurant_id
+    ).first()
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+        
+    def empty_draft_order(t: DiningTable):
+        return OrderResponse(
+            id=f"draft-{t.id}",
+            restaurant_id=current_user.restaurant_id,
+            table_id=t.id,
+            order_number="DRAFT",
+            token_number="0",
+            customer_name="Walk-in Guest",
+            mode=OrderMode.DINE_IN,
+            status=OrderStatus.NEW,
+            payment_status=PaymentStatus.PENDING,
+            placed_by=PlacedBy.POS,
+            subtotal=Decimal("0.00"),
+            cgst=Decimal("0.00"),
+            sgst=Decimal("0.00"),
+            service_charge=Decimal("0.00"),
+            discount=Decimal("0.00"),
+            total_amount=Decimal("0.00"),
+            created_at=datetime.now(timezone.utc),
+            items=[]
+        )
+
+    if not table.current_order_id:
+        return empty_draft_order(table)
+        
+    order = db.query(Order).filter(
+        Order.id == table.current_order_id,
+        Order.restaurant_id == current_user.restaurant_id
+    ).first()
+    
+    if not order or order.status == OrderStatus.COMPLETED or order.payment_status == PaymentStatus.PAID:
+        # Reset stale reference if order is completed
+        table.current_order_id = None
+        table.current_bill = Decimal("0.00")
+        table.opened_at = None
+        db.commit()
+        return empty_draft_order(table)
+        
     return order
 
 @router.post("/tables/{table_id}/order/items", response_model=OrderResponse)

@@ -242,6 +242,8 @@ class OrderService:
                 table.current_order_id = None
                 table.current_bill = Decimal("0.00")
                 table.captain_name = None
+                table.opened_at = None
+                table.assigned_waiter_id = None
 
         # Automatic CRM Loyalty Points Accumulation (Phase 4)
         from app.services.crm_service import CRMService

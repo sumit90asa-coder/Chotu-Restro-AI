@@ -50,6 +50,8 @@ export async function fetchSettings(): Promise<RestaurantSettingsData> {
   return apiFetch<RestaurantSettingsData>("/settings");
 }
 
+export const fetchRestaurantSettings = fetchSettings;
+
 export async function updateSettings(
   data: RestaurantSettingsUpdate
 ): Promise<RestaurantSettingsData> {

@@ -18,7 +18,7 @@ export default function KdsPage() {
 
   const loadTickets = async () => {
     try {
-      const data = await fetchKDSTickets();
+      const data = await fetchKDSTickets("all");
       if (Array.isArray(data)) {
         setKots(data);
       }

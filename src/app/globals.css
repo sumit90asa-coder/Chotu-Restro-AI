@@ -217,3 +217,58 @@
 .btn-reactive:active {
   transform: translateY(1px) scale(0.98);
 }
+
+/* Print Isolation for Tax Invoice, Z-Report, and Printable Receipts (Issue 40) */
+@media print {
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #printable-invoice,
+  #printable-invoice *,
+  #printable-z-report,
+  #printable-z-report *,
+  .printable-area,
+  .printable-area * {
+    visibility: visible !important;
+  }
+
+  #printable-invoice,
+  #printable-z-report,
+  .printable-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 440px !important;
+    margin: 0 auto !important;
+    padding: 24px !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border: 1px dashed #999999 !important;
+    box-shadow: none !important;
+  }
+
+  #printable-invoice *,
+  #printable-z-report *,
+  .printable-area * {
+    color: #000000 !important;
+    border-color: #cccccc !important;
+    background-color: transparent !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+
+  button,
+  .no-print {
+    display: none !important;
+  }
+}
+

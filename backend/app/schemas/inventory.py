@@ -1,7 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from decimal import Decimal
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from app.models.inventory import TransactionType
 
 class IngredientCreate(BaseModel):
@@ -28,8 +28,20 @@ class IngredientResponse(BaseModel):
 
 class StockAdjustment(BaseModel):
     quantity: Decimal  # positive for adding, negative for deduction
-    transaction_type: TransactionType = TransactionType.ADJUSTMENT
+    transaction_type: str = "adjustment"
     notes: Optional[str] = None
+
+    @field_validator("transaction_type", mode="before")
+    @classmethod
+    def normalize_transaction_type(cls, v: Any) -> str:
+        s = str(v).lower().strip()
+        if s in ("intake", "purchase"):
+            return TransactionType.PURCHASE.value
+        if s == "consumption":
+            return TransactionType.CONSUMPTION.value
+        if s == "wastage":
+            return TransactionType.WASTAGE.value
+        return TransactionType.ADJUSTMENT.value
 
 class StockTransactionResponse(BaseModel):
     id: str

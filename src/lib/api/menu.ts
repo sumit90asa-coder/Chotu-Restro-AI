@@ -50,6 +50,38 @@ const DISH_IMAGE_MAP: Record<string, string> = {
   "dish-10": "https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=500&q=80",
 };
 
+function getDishImage(dishId: string, dishName: string = "", photoUrl?: string | null): string {
+  if (photoUrl && photoUrl.trim()) return photoUrl;
+  if (DISH_IMAGE_MAP[dishId]) return DISH_IMAGE_MAP[dishId];
+
+  const lower = dishName.toLowerCase();
+  if (lower.includes("biryani") || lower.includes("rice") || lower.includes("pulao")) {
+    return "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=500&q=80";
+  }
+  if (lower.includes("paneer") || lower.includes("tikka") || lower.includes("kebab")) {
+    return "https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?auto=format&fit=crop&w=500&q=80";
+  }
+  if (lower.includes("butter chicken") || lower.includes("chicken") || lower.includes("murg") || lower.includes("curry") || lower.includes("masala")) {
+    return "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?auto=format&fit=crop&w=500&q=80";
+  }
+  if (lower.includes("naan") || lower.includes("roti") || lower.includes("paratha") || lower.includes("bread") || lower.includes("kulcha")) {
+    return "https://images.unsplash.com/photo-1626074353765-517a681e40be?auto=format&fit=crop&w=500&q=80";
+  }
+  if (lower.includes("dal") || lower.includes("makhani") || lower.includes("tadka") || lower.includes("chana")) {
+    return "https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=500&q=80";
+  }
+  if (lower.includes("gulab") || lower.includes("jamun") || lower.includes("halwa") || lower.includes("kheer") || lower.includes("dessert") || lower.includes("ice cream")) {
+    return "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=500&q=80";
+  }
+  if (lower.includes("lassi") || lower.includes("mojito") || lower.includes("chai") || lower.includes("drink") || lower.includes("shake") || lower.includes("beverage")) {
+    return "https://images.unsplash.com/photo-1546173159-315724a31696?auto=format&fit=crop&w=500&q=80";
+  }
+  if (lower.includes("samosa") || lower.includes("pakora") || lower.includes("chaat") || lower.includes("roll")) {
+    return "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=500&q=80";
+  }
+  return "https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=500&q=80";
+}
+
 export function mapBackendMenuItem(item: BackendMenuItem): MenuItem {
   const isAvailable = (item as any).is_in_stock !== undefined
     ? Boolean((item as any).is_in_stock)
@@ -68,8 +100,8 @@ export function mapBackendMenuItem(item: BackendMenuItem): MenuItem {
     station: item.station,
     inStock: isAvailable,
     spiceLevel: item.spice_level,
-    bestseller: item.bestseller,
-    image: item.photo_url || DISH_IMAGE_MAP[item.id] || "https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&w=500&q=80",
+    bestseller: Boolean((item as any).bestseller ?? (item as any).is_bestseller ?? false),
+    image: getDishImage(item.id, item.name, item.photo_url),
   };
 }
 

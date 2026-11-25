@@ -1,8 +1,10 @@
 from typing import List, Optional
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.order import Order, OrderStatus
+from app.models.kot import KOT, KOTStatus
 from app.schemas.order import OrderResponse, OrderStatusUpdate
 from app.api.deps import get_current_user
 from app.models.user import User
@@ -52,6 +54,21 @@ async def update_order_status(
         raise HTTPException(status_code=404, detail="Order not found")
         
     order.status = status_data.status
+    
+    # When order is marked READY or COMPLETED, synchronize active KOTs
+    if status_data.status in (OrderStatus.READY, OrderStatus.COMPLETED):
+        kots = db.query(KOT).filter(KOT.order_id == order.id, KOT.status != KOTStatus.BUMPED).all()
+        for k in kots:
+            k.status = KOTStatus.BUMPED
+            k.completed_at = datetime.now(timezone.utc)
+            for it in k.items:
+                it.is_prepared = True
+        if kots:
+            await ws_manager.broadcast_to_restaurant(
+                current_user.restaurant_id,
+                create_ws_message(WSEventType.KOT_UPDATED, {"order_id": order.id, "status": "bumped"})
+            )
+
     db.commit()
     db.refresh(order)
 

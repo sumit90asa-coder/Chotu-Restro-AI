@@ -98,7 +98,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const filteredDishes = availableDishes.filter((dish) => {
     const matchesCat = selectedCategory === "all" || dish.category === selectedCategory;
     const matchesDietary = dietaryFilter === "all" || dish.dietary === dietaryFilter;
-    const matchesPopular = !showPopularOnly || dish.bestseller === true || dish.category === "mains";
+    const matchesPopular = !showPopularOnly || dish.bestseller === true;
     const matchesSearch =
       dish.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       dish.description.toLowerCase().includes(searchQuery.toLowerCase());

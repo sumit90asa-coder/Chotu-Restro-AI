@@ -6,6 +6,7 @@ export interface BackendTable {
   restaurant_id: string;
   label?: string;
   table_number?: string;
+  floor_name?: string;
   capacity: number;
   status: TableStatus;
   current_bill: number | string;
@@ -18,10 +19,7 @@ export interface BackendTable {
 
 export function mapBackendTable(t: BackendTable): Table {
   const rawLabel = t.label || t.table_number || t.id;
-  // Map section based on table ID
-  let section = "Main AC Hall";
-  if (t.id === "T-05" || t.id === "T-06") section = "Garden Terrace";
-  if (t.id === "T-07" || t.id === "T-08") section = "VIP Lounge";
+  const section = t.floor_name || "Main AC Hall";
 
   return {
     id: t.id,
@@ -29,7 +27,7 @@ export function mapBackendTable(t: BackendTable): Table {
     capacity: t.capacity,
     status: t.status,
     currentBill: Number(t.current_bill || 0),
-    captainName: t.captain_name || (t.status === "occupied" ? "Captain Ramesh" : undefined),
+    captainName: t.captain_name || (t.status === "occupied" ? "Captain Assigned" : undefined),
     openedAt: t.opened_at,
     qrToken: t.qr_token,
     currentOrderId: t.current_order_id || t.active_order_id,
@@ -40,6 +38,36 @@ export function mapBackendTable(t: BackendTable): Table {
 export async function fetchTables(): Promise<Table[]> {
   const data = await apiFetch<BackendTable[]>("/tables");
   return data.map(mapBackendTable);
+}
+
+export async function fetchFloors(): Promise<string[]> {
+  try {
+    return await apiFetch<string[]>("/tables/floors/all");
+  } catch {
+    return ["Main AC Hall"];
+  }
+}
+
+export async function createTable(payload: { label: string; capacity: number; floor_name: string }): Promise<Table> {
+  const data = await apiFetch<BackendTable>("/tables", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return mapBackendTable(data);
+}
+
+export async function updateTable(tableId: string, payload: { label?: string; capacity?: number; floor_name?: string }): Promise<Table> {
+  const data = await apiFetch<BackendTable>(`/tables/${tableId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  return mapBackendTable(data);
+}
+
+export async function deleteTable(tableId: string): Promise<{ success: boolean; message: string }> {
+  return await apiFetch<{ success: boolean; message: string }>(`/tables/${tableId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function updateTableStatus(tableId: string, status: TableStatus): Promise<Table> {

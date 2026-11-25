@@ -21,7 +21,10 @@ class InventoryService:
                 ingredient = db.query(Ingredient).filter(Ingredient.id == r_item.ingredient_id).first()
                 if ingredient:
                     total_needed = Decimal(str(r_item.quantity_required)) * Decimal(str(item.quantity))
-                    ingredient.current_stock = Decimal(str(ingredient.current_stock)) - total_needed
+                    new_stock = Decimal(str(ingredient.current_stock)) - total_needed
+                    if new_stock < Decimal("0.000"):
+                        new_stock = Decimal("0.000")
+                    ingredient.current_stock = new_stock
                     
                     # Record transaction with unique primary key
                     txn = StockTransaction(
@@ -36,7 +39,7 @@ class InventoryService:
                     db.add(txn)
                     
                     # If ingredient reaches 0 or below, automatically toggle dish out-of-stock
-                    if ingredient.current_stock <= 0:
+                    if ingredient.current_stock <= Decimal("0.000"):
                         dish = db.query(MenuItem).filter(MenuItem.id == m_id).first()
                         if dish:
                             dish.is_in_stock = False
@@ -44,22 +47,53 @@ class InventoryService:
         db.commit()
 
     @staticmethod
-    def adjust_stock(db: Session, restaurant_id: str, ingredient_id: str, delta: Decimal, txn_type: TransactionType, notes: str = ""):
+    def adjust_stock(db: Session, restaurant_id: str, ingredient_id: str, delta: Decimal, txn_type: Any, notes: str = ""):
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.restaurant_id == restaurant_id).first()
         if not ingredient:
             raise ValueError("Ingredient not found")
             
-        ingredient.current_stock = Decimal(str(ingredient.current_stock)) + delta
+        new_stock = Decimal(str(ingredient.current_stock)) + delta
+        if new_stock < Decimal("0.000"):
+            new_stock = Decimal("0.000")
+        ingredient.current_stock = new_stock
+
+        resolved_type = TransactionType.ADJUSTMENT
+        if isinstance(txn_type, TransactionType):
+            resolved_type = txn_type
+        elif str(txn_type).lower() in ("intake", "purchase"):
+            resolved_type = TransactionType.PURCHASE
+        elif str(txn_type).lower() == "wastage":
+            resolved_type = TransactionType.WASTAGE
+        elif str(txn_type).lower() == "consumption":
+            resolved_type = TransactionType.CONSUMPTION
+
         txn = StockTransaction(
             id=f"stxn-adj-{int(datetime.now().timestamp())}-{ingredient.id[-4:]}",
             restaurant_id=restaurant_id,
             ingredient_id=ingredient.id,
-            transaction_type=txn_type,
+            transaction_type=resolved_type,
             quantity=delta,
             reference_id=None,
             notes=notes
         )
         db.add(txn)
+
+        # Auto-replenish dishes that were out of stock if all ingredients are now available
+        if ingredient.current_stock > Decimal("0.000"):
+            recipe_items = db.query(RecipeItem).filter(RecipeItem.ingredient_id == ingredient.id).all()
+            for r in recipe_items:
+                dish = db.query(MenuItem).filter(MenuItem.id == r.menu_item_id).first()
+                if dish and not dish.is_in_stock:
+                    all_recipes = db.query(RecipeItem).filter(RecipeItem.menu_item_id == dish.id).all()
+                    can_stock = True
+                    for other_r in all_recipes:
+                        other_ing = db.query(Ingredient).filter(Ingredient.id == other_r.ingredient_id).first()
+                        if other_ing and other_ing.current_stock <= Decimal("0.000"):
+                            can_stock = False
+                            break
+                    if can_stock:
+                        dish.is_in_stock = True
+
         db.commit()
         db.refresh(ingredient)
         return ingredient

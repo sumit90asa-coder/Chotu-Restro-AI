@@ -31,23 +31,66 @@ export interface BackendOrder {
   items: BackendOrderItem[];
 }
 
-export function mapBackendOrderItem(i: BackendOrderItem): OrderItem {
+export function mapBackendOrderItem(i: any): OrderItem {
+  const priceVal = i.price !== undefined ? i.price : (i.unit_price !== undefined ? i.unit_price : 0);
+  const dishIdVal = i.dish_id || i.menu_item_id || i.id || "";
   return {
-    dishId: i.dish_id,
-    name: i.name,
-    price: Number(i.unit_price),
-    quantity: i.quantity,
-    dietary: i.dietary,
-    station: i.station,
+    dishId: dishIdVal,
+    name: i.name || "Item",
+    price: Number(priceVal) || 0,
+    quantity: Number(i.quantity) || 1,
+    dietary: i.dietary || "veg",
+    station: i.station || "curry",
     notes: i.notes,
-    status: i.status,
+    status: i.status || "cooking",
   };
 }
 
 export async function getTableOrder(tableId: string): Promise<{ order: BackendOrder; items: OrderItem[] }> {
-  const order = await apiFetch<BackendOrder>(`/pos/tables/${tableId}/order`);
-  const items = (order.items || []).map(mapBackendOrderItem);
-  return { order, items };
+  try {
+    const order = await apiFetch<BackendOrder | null>(`/pos/tables/${tableId}/order`);
+    if (!order || !order.id) {
+      return {
+        order: {
+          id: "",
+          order_number: "",
+          table_id: tableId,
+          status: "open",
+          subtotal: 0,
+          cgst: 0,
+          sgst: 0,
+          service_charge: 0,
+          discount_amount: 0,
+          total_amount: 0,
+          placed_by: "pos",
+          mode: "dine_in",
+          items: [],
+        },
+        items: [],
+      };
+    }
+    const items = (order.items || []).map(mapBackendOrderItem);
+    return { order, items };
+  } catch {
+    return {
+      order: {
+        id: "",
+        order_number: "",
+        table_id: tableId,
+        status: "open",
+        subtotal: 0,
+        cgst: 0,
+        sgst: 0,
+        service_charge: 0,
+        discount_amount: 0,
+        total_amount: 0,
+        placed_by: "pos",
+        mode: "dine_in",
+        items: [],
+      },
+      items: [],
+    };
+  }
 }
 
 export async function addOrUpdateOrderItem(

@@ -1,7 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from decimal import Decimal
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from app.models.order import OrderMode, OrderStatus, PaymentStatus, PlacedBy
 from app.models.menu import DietaryType, StationType
 
@@ -17,8 +17,10 @@ class OrderItemCreate(BaseModel):
 class OrderItemResponse(BaseModel):
     id: str
     menu_item_id: str
+    dish_id: Optional[str] = None
     name: str
     price: Decimal
+    unit_price: Optional[Decimal] = None
     quantity: int
     dietary: DietaryType
     station: StationType
@@ -27,6 +29,27 @@ class OrderItemResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_aliases(cls, data: Any) -> Any:
+        if hasattr(data, "__dict__"):
+            dish_val = getattr(data, "dish_id", None) or getattr(data, "menu_item_id", None)
+            price_val = getattr(data, "unit_price", None) or getattr(data, "price", None)
+            try:
+                setattr(data, "dish_id", dish_val)
+            except Exception:
+                pass
+            try:
+                setattr(data, "unit_price", price_val)
+            except Exception:
+                pass
+        elif isinstance(data, dict):
+            dish_val = data.get("dish_id") or data.get("menu_item_id")
+            price_val = data.get("unit_price") or data.get("price")
+            data["dish_id"] = dish_val
+            data["unit_price"] = price_val
+        return data
 
 class OrderCreate(BaseModel):
     table_id: Optional[str] = None

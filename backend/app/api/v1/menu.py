@@ -83,19 +83,33 @@ def create_menu_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    cat_identifier = req.category_id or req.category or "starters"
     cat = db.query(MenuCategory).filter(
-        MenuCategory.id == req.category_id,
+        (MenuCategory.id == cat_identifier) | (MenuCategory.slug == cat_identifier.lower()) | (MenuCategory.name.ilike(cat_identifier)),
         MenuCategory.restaurant_id == current_user.restaurant_id
     ).first()
+    
     if not cat:
-        raise HTTPException(status_code=400, detail="Invalid category ID")
+        # Dynamically create category for this restaurant
+        cat_id = f"cat-{uuid.uuid4().hex[:6]}"
+        display_name = cat_identifier.replace("-", " ").replace("_", " ").title()
+        cat = MenuCategory(
+            id=cat_id,
+            restaurant_id=current_user.restaurant_id,
+            name=display_name,
+            slug=cat_identifier.lower().replace(" ", "-"),
+            display_order=db.query(MenuCategory).filter(MenuCategory.restaurant_id == current_user.restaurant_id).count() + 1,
+            is_active=True
+        )
+        db.add(cat)
+        db.flush()
 
     new_dish = MenuItem(
         id=f"dish-{uuid.uuid4().hex[:8]}",
         restaurant_id=current_user.restaurant_id,
-        category_id=req.category_id,
-        name=req.name,
-        description=req.description,
+        category_id=cat.id,
+        name=req.name.strip(),
+        description=req.description.strip() if req.description else None,
         price=req.price,
         dietary=req.dietary,
         station=req.station,
@@ -110,6 +124,28 @@ def create_menu_item(
     db.commit()
     db.refresh(new_dish)
     return new_dish
+
+@router.delete("/items/{dish_id}", status_code=200)
+async def delete_menu_item(
+    dish_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    dish = db.query(MenuItem).filter(
+        MenuItem.id == dish_id,
+        MenuItem.restaurant_id == current_user.restaurant_id
+    ).first()
+    if not dish:
+        raise HTTPException(status_code=404, detail="Dish not found")
+        
+    dish.is_active = False
+    db.commit()
+    
+    await ws_manager.broadcast_to_restaurant(
+        current_user.restaurant_id,
+        create_ws_message(WSEventType.DISH_STOCK_TOGGLED, {"dish_id": dish.id, "is_active": False})
+    )
+    return {"success": True, "message": f"Dish '{dish.name}' deactivated successfully"}
 
 @router.post("/items/{dish_id}/variants", response_model=MenuItemVariantResponse)
 def add_item_variant(

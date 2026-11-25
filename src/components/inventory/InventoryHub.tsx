@@ -17,7 +17,9 @@ import {
   Truck,
   FileCheck,
   Building,
-  Check
+  Check,
+  Trash2,
+  Edit2
 } from "lucide-react";
 import { 
   IngredientStock, 
@@ -30,6 +32,8 @@ import {
   PurchaseOrderData,
   fetchSuppliers,
   createSupplier,
+  updateSupplier,
+  deleteSupplier,
   fetchPurchaseOrders,
   createPurchaseOrder,
   receivePurchaseOrder
@@ -333,7 +337,7 @@ export const InventoryHub: React.FC = () => {
                     Stock Warning: {lowStockCount + outOfStockCount} ingredients require procurement
                   </h4>
                   <p className="text-xs text-ink-secondary mt-0.5">
-                    Depleted stock levels for core kitchen staples. Order from your registered vendors to avoid 86ing bestselling dishes.
+                    Depleted stock levels for {ingredients.filter(i => Number(i.current_stock) <= 0 || i.is_low_stock).map(i => i.name).slice(0, 3).join(", ") || "core kitchen staples"}. Order from your registered vendors to avoid 86ing bestselling dishes.
                   </p>
                 </div>
               </div>
@@ -500,12 +504,13 @@ export const InventoryHub: React.FC = () => {
                     <th className="py-3 px-4 font-semibold">Email</th>
                     <th className="py-3 px-4 font-semibold">GSTIN</th>
                     <th className="py-3 px-4 font-semibold">Status</th>
+                    <th className="py-3 px-4 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {suppliers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-xs text-ink-secondary font-mono">
+                      <td colSpan={7} className="py-8 text-center text-xs text-ink-secondary font-mono">
                         No suppliers registered yet. Click "Add New Supplier" to create your vendor network.
                       </td>
                     </tr>
@@ -518,9 +523,44 @@ export const InventoryHub: React.FC = () => {
                         <td className="py-3 px-4 text-ink-secondary">{sup.email || "—"}</td>
                         <td className="py-3 px-4 font-mono text-xs">{sup.gstin || "—"}</td>
                         <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-dietary-veg/15 text-dietary-veg border border-dietary-veg/30">
-                            Active Vendor
-                          </span>
+                          <button
+                            onClick={async () => {
+                              try {
+                                await updateSupplier(sup.id, { is_active: !sup.is_active });
+                                showToast(`Vendor status updated for ${sup.name}`);
+                                const s = await fetchSuppliers();
+                                setSuppliers(s);
+                              } catch {
+                                showToast("Failed to update vendor status");
+                              }
+                            }}
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
+                              sup.is_active
+                                ? "bg-dietary-veg/15 text-dietary-veg border-dietary-veg/30 hover:bg-dietary-veg/25"
+                                : "bg-canvas-subtle text-ink-muted border-border hover:text-ink"
+                            }`}
+                          >
+                            {sup.is_active ? "Active Vendor" : "Inactive"}
+                          </button>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Delete supplier ${sup.name}?`)) return;
+                              try {
+                                const res = await deleteSupplier(sup.id);
+                                showToast(res.message || "Supplier removed");
+                                const s = await fetchSuppliers();
+                                setSuppliers(s);
+                              } catch (err: any) {
+                                showToast(err?.message || "Failed to delete supplier");
+                              }
+                            }}
+                            className="p-1 rounded hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
+                            title="Delete or Deactivate Supplier"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     ))

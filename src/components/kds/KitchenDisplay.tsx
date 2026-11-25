@@ -305,12 +305,12 @@ export const KitchenDisplay: React.FC<KitchenDisplayProps> = ({
                     <div className="space-y-2">
                       {kot.items.map((item, idx) => {
                         const itemKey = `${kot.id}-${item.dishId}-${idx}`;
-                        const isDone = isCompleted || checkedItems[itemKey];
+                        const isDone = isCompleted || item.status === "ready" || checkedItems[itemKey];
 
                         return (
                           <div
                             key={itemKey}
-                            onClick={() => !isCompleted && toggleItemCheck(itemKey, item.dishId)}
+                            onClick={() => !isCompleted && toggleItemCheck(itemKey, (item as any).id || item.dishId)}
                             className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
                               isDone
                                 ? "bg-stone-900/40 border-stone-800/40 opacity-50"

@@ -30,6 +30,7 @@ export function mapBackendKOT(k: BackendKOT): KOT {
 
   const items: OrderItem[] = (k.items || []).map((it) => ({
     dishId: it.dish_id,
+    id: it.id,
     name: it.name,
     price: 0,
     quantity: it.quantity,
@@ -37,7 +38,7 @@ export function mapBackendKOT(k: BackendKOT): KOT {
     station: it.station,
     notes: it.notes,
     status: it.is_prepared ? "ready" : "cooking",
-  }));
+  } as any));
 
   return {
     id: k.id,
@@ -53,7 +54,7 @@ export function mapBackendKOT(k: BackendKOT): KOT {
   };
 }
 
-export async function fetchKDSTickets(status?: "active" | "completed", station?: string): Promise<KOT[]> {
+export async function fetchKDSTickets(status?: "active" | "completed" | "all", station?: string): Promise<KOT[]> {
   const params = new URLSearchParams();
   if (status) params.set("status", status);
   if (station && station !== "all") params.set("station", station);

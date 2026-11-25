@@ -23,11 +23,13 @@ import {
   ShieldCheck,
   Flame,
   ChevronRight,
-  AlertCircle
+  AlertCircle,
+  Plus,
+  Trash2
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Modal } from "@/components/ui/Modal";
-import { fetchTables, updateTableStatus, transferTable } from "@/lib/api/tables";
+import { fetchTables, updateTableStatus, transferTable, createTable, deleteTable, fetchFloors } from "@/lib/api/tables";
 import { getTableOrder, settleTableBill } from "@/lib/api/pos";
 import { Table, TableStatus, OrderItem } from "@/types/restaurant";
 import { wsClient } from "@/lib/api/websocket";
@@ -70,6 +72,38 @@ export default function TablesPage() {
   const [showSettleModal, setShowSettleModal] = useState<boolean>(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">("upi");
   const [isSettling, setIsSettling] = useState<boolean>(false);
+
+  // Add Table Modal
+  const [showAddTableModal, setShowAddTableModal] = useState<boolean>(false);
+  const [newTableLabel, setNewTableLabel] = useState<string>("");
+  const [newTableCapacity, setNewTableCapacity] = useState<number>(4);
+  const [newTableFloor, setNewTableFloor] = useState<string>("Main AC Hall");
+  const [isCreatingTable, setIsCreatingTable] = useState<boolean>(false);
+
+  const handleCreateTableSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTableLabel.trim()) {
+      showToast("Table label is required (e.g. T-09)");
+      return;
+    }
+    setIsCreatingTable(true);
+    try {
+      await createTable({
+        label: newTableLabel.trim(),
+        capacity: Number(newTableCapacity) || 4,
+        floor_name: newTableFloor.trim() || "Main AC Hall",
+      });
+      showToast(`Table ${newTableLabel.trim()} added successfully`);
+      setShowAddTableModal(false);
+      setNewTableLabel("");
+      setNewTableCapacity(4);
+      await loadTables();
+    } catch (err: any) {
+      showToast(err?.message || "Failed to create table");
+    } finally {
+      setIsCreatingTable(false);
+    }
+  };
 
   // Notification Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -296,6 +330,13 @@ export default function TablesPage() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </button>
+            <button
+              onClick={() => setShowAddTableModal(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-stone-950 font-bold text-xs shadow-md shadow-[#E07A5F]/20 hover:brightness-110 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Table</span>
+            </button>
             <Link
               href="/pos"
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs shadow-md transition-all"
@@ -364,7 +405,7 @@ export default function TablesPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#181514] border border-stone-800">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-stone-400 uppercase font-mono mr-1">Section:</span>
-          {["all", "Main AC Hall", "Garden Terrace", "VIP Lounge"].map((sec) => (
+          {["all", ...Array.from(new Set(["Main AC Hall", ...tables.map((t) => t.section || "Main AC Hall")]))].map((sec) => (
             <button
               key={sec}
               onClick={() => setSectionFilter(sec)}
@@ -636,6 +677,24 @@ export default function TablesPage() {
                       Change Status
                     </button>
                   </div>
+
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Are you sure you want to permanently delete ${selectedTable.label}?`)) return;
+                      try {
+                        await deleteTable(selectedTable.id);
+                        showToast(`Table ${selectedTable.label} deleted successfully`);
+                        setSelectedTable(null);
+                        await loadTables();
+                      } catch (err: any) {
+                        showToast(err?.message || "Failed to delete table");
+                      }
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Vacant Table</span>
+                  </button>
                 </div>
               </div>
             ) : (
@@ -943,6 +1002,81 @@ export default function TablesPage() {
               </button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Add Table Modal */}
+      {showAddTableModal && (
+        <Modal
+          isOpen={showAddTableModal}
+          onClose={() => setShowAddTableModal(false)}
+          title="Add New Dining Table"
+          description="Provision a new table with unique QR code and floor assignment"
+        >
+          <form onSubmit={handleCreateTableSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-stone-300 mb-1.5">
+                Table Number / Label <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={newTableLabel}
+                onChange={(e) => setNewTableLabel(e.target.value)}
+                placeholder="e.g. T-09, Rooftop-01"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-stone-800 text-stone-200 text-xs focus:outline-none focus:border-[#E07A5F]"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-stone-300 mb-1.5">
+                  Seating Capacity (Pax)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  required
+                  value={newTableCapacity}
+                  onChange={(e) => setNewTableCapacity(parseInt(e.target.value) || 2)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-stone-800 text-stone-200 text-xs focus:outline-none focus:border-[#E07A5F]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-stone-300 mb-1.5">
+                  Floor / Section
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newTableFloor}
+                  onChange={(e) => setNewTableFloor(e.target.value)}
+                  placeholder="e.g. Main AC Hall, Rooftop"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-stone-800 text-stone-200 text-xs focus:outline-none focus:border-[#E07A5F]"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-800">
+              <button
+                type="button"
+                onClick={() => setShowAddTableModal(false)}
+                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isCreatingTable}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-stone-950 font-bold text-xs shadow-md transition-all flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{isCreatingTable ? "Creating..." : "Create Table"}</span>
+              </button>
+            </div>
+          </form>
         </Modal>
       )}
     </div>

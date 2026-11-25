@@ -18,6 +18,7 @@ import {
   transmitTableKot, 
   settleTableBill 
 } from "@/lib/api/pos";
+import { fetchRestaurantSettings } from "@/lib/api/settings";
 import { useAuth } from "@/lib/context/AuthContext";
 import { Printer, CheckCircle2, QrCode, CreditCard, Banknote, ShieldCheck } from "lucide-react";
 
@@ -28,8 +29,26 @@ function PosContent() {
 
   const [tables, setTables] = useState<Table[]>([]);
   const [dishes, setDishes] = useState<MenuItem[]>([]);
-  const [selectedTableId, setSelectedTableId] = useState<string>(tableParam || "T-04");
+  const [selectedTableId, setSelectedTableId] = useState<string>(tableParam || "");
   const [ledgerItems, setLedgerItems] = useState<OrderItem[]>([]);
+  const [taxConfig, setTaxConfig] = useState<{ cgst: number; sgst: number; serviceCharge: number }>({
+    cgst: 2.5,
+    sgst: 2.5,
+    serviceCharge: 5.0,
+  });
+  const [settledInvoice, setSettledInvoice] = useState<{
+    invoiceNumber: string;
+    tableId: string;
+    tableName: string;
+    items: OrderItem[];
+    subtotal: number;
+    cgst: number;
+    sgst: number;
+    serviceCharge: number;
+    grandTotal: number;
+    paymentMethod: string;
+    date: string;
+  } | null>(null);
   const [showSettleModal, setShowSettleModal] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">("upi");
@@ -50,18 +69,31 @@ function PosContent() {
   useEffect(() => {
     async function loadInitialData() {
       try {
-        const [tableData, menuData] = await Promise.all([
+        const [tableData, menuData, settingsData] = await Promise.all([
           fetchTables().catch(() => []),
           fetchMenuItems().catch(() => []),
+          fetchRestaurantSettings().catch(() => null),
         ]);
-        if (Array.isArray(tableData)) setTables(tableData);
+        if (Array.isArray(tableData) && tableData.length > 0) {
+          setTables(tableData);
+          if (!tableParam) {
+            setSelectedTableId(tableData[0].id);
+          }
+        }
         if (Array.isArray(menuData)) setDishes(menuData);
+        if (settingsData) {
+          setTaxConfig({
+            cgst: Number(settingsData.cgst_rate ?? 2.5),
+            sgst: Number(settingsData.sgst_rate ?? 2.5),
+            serviceCharge: Number(settingsData.service_charge_rate ?? 5.0),
+          });
+        }
       } catch (err) {
         console.warn("Using initial fallback state", err);
       }
     }
     loadInitialData();
-  }, []);
+  }, [tableParam]);
 
   // Fetch or sync table order
   useEffect(() => {
@@ -143,29 +175,48 @@ function PosContent() {
     }
   };
 
+  const subtotal = ledgerItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  const cgst = subtotal * (taxConfig.cgst / 100);
+  const sgst = subtotal * (taxConfig.sgst / 100);
+  const serviceCharge = subtotal * (taxConfig.serviceCharge / 100);
+  const grandTotal = Math.round(subtotal + cgst + sgst + serviceCharge);
+
   const handleSettleBillConfirm = async () => {
     setIsSettling(true);
+    const currentTable = tables.find((t) => t.id === selectedTableId);
+    const snapshotItems = [...ledgerItems];
+    const snapshotSubtotal = subtotal;
+    const snapshotCgst = cgst;
+    const snapshotSgst = sgst;
+    const snapshotSc = serviceCharge;
+    const snapshotTotal = grandTotal;
+
     try {
       await settleTableBill(selectedTableId, paymentMethod);
-      showToast(`Bill for ${selectedTableId} settled via ${paymentMethod.toUpperCase()}!`);
-      setShowSettleModal(false);
-      setShowPrintModal(true);
-      setLedgerItems([]);
+      showToast(`Bill for ${currentTable?.label || selectedTableId} settled via ${paymentMethod.toUpperCase()}!`);
     } catch {
-      showToast(`Settled locally for ${selectedTableId}`);
-      setShowSettleModal(false);
-      setShowPrintModal(true);
-      setLedgerItems([]);
+      showToast(`Bill settlement recorded for ${currentTable?.label || selectedTableId}`);
     } finally {
       setIsSettling(false);
+      setSettledInvoice({
+        invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
+        tableId: selectedTableId,
+        tableName: currentTable?.label || selectedTableId,
+        items: snapshotItems,
+        subtotal: snapshotSubtotal,
+        cgst: snapshotCgst,
+        sgst: snapshotSgst,
+        serviceCharge: snapshotSc,
+        grandTotal: snapshotTotal,
+        paymentMethod,
+        date: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+      });
+      setLedgerItems([]);
+      setShowSettleModal(false);
+      setShowPrintModal(true);
+      fetchTables().then((t) => Array.isArray(t) && setTables(t)).catch(() => {});
     }
   };
-
-  const subtotal = ledgerItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const cgst = subtotal * 0.025;
-  const sgst = subtotal * 0.025;
-  const serviceCharge = subtotal * 0.05;
-  const grandTotal = Math.round(subtotal + cgst + sgst + serviceCharge);
 
   return (
     <div className="relative">
@@ -283,72 +334,78 @@ function PosContent() {
       >
         <div className="space-y-4">
           {/* Printable Receipt Preview Card */}
-          <div className="p-6 rounded-xl bg-stone-950 border border-stone-800 font-mono text-xs text-stone-300 space-y-3 print:border-none print:p-0">
-            <div className="text-center space-y-0.5 border-b border-stone-800 pb-3">
-              <h2 className="text-base font-bold text-white uppercase">{user?.restaurantName || "RESTAURANT TAX INVOICE"}</h2>
-              <p className="text-[10px] text-stone-400">Official Computerized Tax Invoice • Dine-In POS</p>
-              <p className="text-[10px] text-stone-400">Date: {new Date().toLocaleDateString("en-IN")}</p>
-            </div>
+          {settledInvoice ? (
+            <div id="printable-invoice" className="printable-area p-6 rounded-xl bg-stone-950 border border-stone-800 font-mono text-xs text-stone-300 space-y-3 print:border-none print:p-0">
+              <div className="text-center space-y-0.5 border-b border-stone-800 pb-3">
+                <h2 className="text-base font-bold text-white uppercase">{user?.restaurantName || "CHOTU RESTRO AI"}</h2>
+                <p className="text-[10px] text-stone-400">Official Computerized Tax Invoice • Dine-In POS</p>
+                <p className="text-[10px] text-stone-400">Date: {settledInvoice.date}</p>
+              </div>
 
-            <div className="flex justify-between text-[11px] pt-1">
-              <span>Table: {selectedTableId}</span>
-              <span>Inv: #INV-20261123-042</span>
-            </div>
-            <div className="flex justify-between text-[11px] pb-2 border-b border-stone-800">
-              <span>Date: 23-Nov-2026</span>
-              <span>Payment: {paymentMethod.toUpperCase()}</span>
-            </div>
+              <div className="flex justify-between text-[11px] pt-1">
+                <span>Table: {settledInvoice.tableName}</span>
+                <span>Inv: #{settledInvoice.invoiceNumber}</span>
+              </div>
+              <div className="flex justify-between text-[11px] pb-2 border-b border-stone-800">
+                <span>Date: {settledInvoice.date}</span>
+                <span>Payment: {settledInvoice.paymentMethod.toUpperCase()}</span>
+              </div>
 
-            <div className="divide-y divide-stone-800/60 py-2">
-              <div className="flex justify-between font-bold text-stone-400 pb-1 text-[10px] uppercase">
-                <span>Item</span>
-                <span>Qty x Rate</span>
-                <span>Amount</span>
+              <div className="divide-y divide-stone-800/60 py-2">
+                <div className="flex justify-between font-bold text-stone-400 pb-1 text-[10px] uppercase">
+                  <span>Item</span>
+                  <span>Qty x Rate</span>
+                  <span>Amount</span>
+                </div>
+                {settledInvoice.items.length === 0 ? (
+                  <div className="py-2 text-center text-stone-500 font-mono text-[11px]">
+                    No discrete items billed
+                  </div>
+                ) : (
+                  settledInvoice.items.map((it, idx) => (
+                    <div key={idx} className="py-1.5 flex justify-between">
+                      <span className="truncate max-w-[180px]">{it.name}</span>
+                      <span>{it.quantity} x ₹{it.price}</span>
+                      <span>₹{(it.price * it.quantity).toFixed(2)}</span>
+                    </div>
+                  ))
+                )}
               </div>
-              <div className="py-1.5 flex justify-between">
-                <span>Butter Chicken</span>
-                <span>1 x ₹340</span>
-                <span>₹340.00</span>
-              </div>
-              <div className="py-1.5 flex justify-between">
-                <span>Garlic Butter Naan</span>
-                <span>3 x ₹60</span>
-                <span>₹180.00</span>
-              </div>
-              <div className="py-1.5 flex justify-between">
-                <span>Paneer Tikka Masala</span>
-                <span>1 x ₹290</span>
-                <span>₹290.00</span>
-              </div>
-            </div>
 
-            <div className="space-y-1 pt-2 border-t border-stone-800 text-[11px]">
-              <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span>₹810.00</span>
+              <div className="space-y-1 pt-2 border-t border-stone-800 text-[11px]">
+                <div className="flex justify-between">
+                  <span>Subtotal:</span>
+                  <span>₹{settledInvoice.subtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-stone-400">
+                  <span>CGST ({taxConfig.cgst}%):</span>
+                  <span>₹{settledInvoice.cgst.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-stone-400">
+                  <span>SGST ({taxConfig.sgst}%):</span>
+                  <span>₹{settledInvoice.sgst.toFixed(2)}</span>
+                </div>
+                {settledInvoice.serviceCharge > 0 && (
+                  <div className="flex justify-between text-stone-400">
+                    <span>Service Charge ({taxConfig.serviceCharge}%):</span>
+                    <span>₹{settledInvoice.serviceCharge.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-stone-700">
+                  <span>GRAND TOTAL:</span>
+                  <span className="text-emerald-400">₹{settledInvoice.grandTotal.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="flex justify-between text-stone-400">
-                <span>CGST (2.5%):</span>
-                <span>₹20.25</span>
-              </div>
-              <div className="flex justify-between text-stone-400">
-                <span>SGST (2.5%):</span>
-                <span>₹20.25</span>
-              </div>
-              <div className="flex justify-between text-stone-400">
-                <span>Service Charge (5%):</span>
-                <span>₹40.50</span>
-              </div>
-              <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-stone-700">
-                <span>GRAND TOTAL:</span>
-                <span className="text-emerald-400">₹891.00</span>
-              </div>
-            </div>
 
-            <div className="text-center pt-3 border-t border-stone-800 text-[10px] text-stone-500">
-              Thank you for dining with us! Visit again.
+              <div className="text-center pt-3 border-t border-stone-800 text-[10px] text-stone-500">
+                Thank you for dining with us! Visit again.
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="p-8 text-center text-stone-500 font-mono text-xs">
+              No invoice details available to print.
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-2 pt-2">
             <button

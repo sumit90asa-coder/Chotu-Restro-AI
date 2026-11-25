@@ -260,7 +260,7 @@ export default function AnalyticsPage() {
         maxWidth="md"
       >
         <div className="space-y-4">
-          <div className="p-6 rounded-2xl bg-stone-950 border border-stone-800 font-mono text-xs space-y-3">
+          <div id="printable-z-report" className="printable-area p-6 rounded-2xl bg-stone-950 border border-stone-800 font-mono text-xs space-y-3">
             <div className="text-center pb-3 border-b border-stone-800">
               <h2 className="text-sm font-bold text-white uppercase">{user?.restaurantName || "RESTAURANT AUDIT REPORT"}</h2>
               <p className="text-[10px] text-stone-400">Official Daily Reconciliation • GST Tax Ledger</p>

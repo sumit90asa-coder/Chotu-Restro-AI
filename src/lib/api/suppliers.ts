@@ -82,12 +82,40 @@ export async function fetchPurchaseOrders(status?: string): Promise<PurchaseOrde
   return apiFetch<PurchaseOrderData[]>(`/suppliers/purchase-orders${params}`);
 }
 
+export async function updateSupplier(
+  supplierId: string,
+  data: Partial<SupplierCreateData> & { is_active?: boolean }
+): Promise<SupplierData> {
+  return apiFetch<SupplierData>(`/suppliers/${supplierId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteSupplier(
+  supplierId: string
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch<{ success: boolean; message: string }>(`/suppliers/${supplierId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function createPurchaseOrder(
   data: PurchaseOrderCreateData
 ): Promise<PurchaseOrderData> {
+  const payload = {
+    supplier_id: data.supplier_id,
+    notes: (data as any).notes || "",
+    items: (data.items || []).map((it: any) => ({
+      ingredient_id: it.ingredient_id,
+      quantity: it.quantity ?? it.ordered_quantity ?? 1,
+      ordered_quantity: it.ordered_quantity ?? it.quantity ?? 1,
+      unit_cost: it.unit_cost ?? 0,
+    })),
+  };
   return apiFetch<PurchaseOrderData>("/suppliers/purchase-orders", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
 }
 
