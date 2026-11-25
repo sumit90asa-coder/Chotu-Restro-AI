@@ -9,17 +9,11 @@ from app.api.v1 import (
     settings as settings_api, staff, customers, delivery, suppliers, notifications
 )
 from app.websocket.manager import ws_manager
-from app.initial_data import init_demo_db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Auto-create tables and populate initial demo seed data if empty
+    # Ensure all tables exist on startup
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        init_demo_db(db)
-    finally:
-        db.close()
     yield
 
 app = FastAPI(
@@ -41,6 +35,7 @@ app.add_middleware(
 
 # Health Check
 @app.get("/health")
+@app.get(f"{settings.API_V1_STR}/health")
 def health_check():
     return {
         "status": "healthy",

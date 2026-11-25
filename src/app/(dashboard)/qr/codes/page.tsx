@@ -26,8 +26,10 @@ import {
   HelpCircle,
   Eye
 } from "lucide-react";
+import { useAuth } from "@/lib/context/AuthContext";
 
 export default function QrCodesAdminPage() {
+  const { user } = useAuth();
   const [tables, setTables] = useState<Table[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -188,7 +190,7 @@ export default function QrCodesAdminPage() {
       const blobUrl = URL.createObjectURL(content);
       const downloadLink = document.createElement("a");
       downloadLink.href = blobUrl;
-      downloadLink.download = "SpiceJunction_All_Table_QRs.zip";
+      downloadLink.download = `${user?.restaurantName ? user.restaurantName.replace(/[^a-zA-Z0-9]/g, "_") : "Restaurant"}_Table_QRs.zip`;
       document.body.appendChild(downloadLink);
       downloadLink.click();
       document.body.removeChild(downloadLink);
@@ -418,8 +420,8 @@ export default function QrCodesAdminPage() {
                 {/* Header Information */}
                 <div className="w-full space-y-1 mb-3">
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-[10px] font-mono uppercase font-bold text-[#E07A5F] tracking-widest">
-                      The Spice Junction
+                    <span className="text-[10px] font-mono uppercase font-bold text-[#E07A5F] tracking-widest truncate max-w-[150px]">
+                      {user?.restaurantName || "Restaurant Table"}
                     </span>
 
                     {/* Table Status Badge */}
@@ -613,7 +615,7 @@ export default function QrCodesAdminPage() {
             <div className="p-6 rounded-2xl bg-white text-stone-950 text-center space-y-3 shadow-md border border-stone-300">
               <div>
                 <span className="text-[10px] font-mono uppercase font-bold text-[#E07A5F] tracking-widest block">
-                  The Spice Junction
+                  {user?.restaurantName || "Restaurant Table"}
                 </span>
                 <h4 className="text-2xl font-black text-stone-900">{tableToPrint.label}</h4>
                 <p className="text-xs text-stone-600 font-medium">Table for {tableToPrint.capacity} Guests</p>

@@ -2,23 +2,39 @@ import { WS_BASE_URL } from "./client";
 
 export type WebSocketEventHandler = (event: { type: string; payload: any; timestamp: string }) => void;
 
+function getActiveRestaurantId(): string {
+  if (typeof window !== "undefined") {
+    try {
+      const sess = localStorage.getItem("chotu_user_session");
+      if (sess) {
+        const parsed = JSON.parse(sess);
+        if (parsed.restaurantId) return parsed.restaurantId;
+      }
+    } catch {
+      // fallback
+    }
+  }
+  return "default";
+}
+
 class WebSocketClient {
   private socket: WebSocket | null = null;
-  private restaurantId: string = "rest-spice-jct";
+  private restaurantId: string = "default";
   private listeners: Set<WebSocketEventHandler> = new Set();
   private reconnectTimeout: any = null;
   private pingInterval: any = null;
 
-  public connect(restaurantId: string = "rest-spice-jct") {
+  public connect(restaurantId?: string) {
     if (typeof window === "undefined") return;
-    this.restaurantId = restaurantId;
+    const resolvedId = restaurantId || getActiveRestaurantId();
+    this.restaurantId = resolvedId;
 
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
     try {
-      const url = `${WS_BASE_URL}/ws/${restaurantId}`;
+      const url = `${WS_BASE_URL}/ws/${resolvedId}`;
       this.socket = new WebSocket(url);
 
       this.socket.onopen = () => {

@@ -142,7 +142,7 @@ export default function MarketingPage() {
                 Weekend Biryani & Curry Fest
               </span>
               <p className="text-[11px] text-stone-400">
-                "Craving authentic Dum Biryani? Use code <strong>WELCOME20</strong> to get 20% off this weekend at The Spice Junction!"
+                "Craving authentic dining? Use code <strong>WELCOME20</strong> to get 20% off this weekend at our restaurant!"
               </p>
             </div>
             <div className="mt-3 pt-2 border-t border-stone-800 flex justify-between items-center">

@@ -3,12 +3,14 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Mic, Sparkles, Activity, Clock, ShieldCheck, HelpCircle } from "lucide-react";
+import { useAuth } from "@/lib/context/AuthContext";
 
 interface TopBarProps {
   onOpenVoiceModal: () => void;
 }
 
 export function TopBar({ onOpenVoiceModal }: TopBarProps) {
+  const { user } = useAuth();
   const [clock, setClock] = useState<string>("");
 
   useEffect(() => {
@@ -27,8 +29,8 @@ export function TopBar({ onOpenVoiceModal }: TopBarProps) {
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-semibold text-stone-200">The Spice Junction</span>
-          <span className="text-xs text-stone-500">• Bandra West</span>
+          <span className="text-xs font-semibold text-stone-200">{user?.restaurantName || "Restaurant"}</span>
+          <span className="text-xs text-stone-500">• {user ? "Live Outlet" : "Cloud"}</span>
         </div>
 
         <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-800/60 border border-stone-700/50 text-[11px] text-stone-300">

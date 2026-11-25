@@ -113,9 +113,9 @@ export default function KioskPage() {
             <Flame className="w-7 h-7 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold text-white tracking-tight">The Spice Junction</h1>
+            <h1 className="text-xl font-extrabold text-white tracking-tight">Express Self-Ordering Kiosk</h1>
             <p className="text-xs text-[#E07A5F] font-mono uppercase tracking-wider">
-              Self-Ordering Express Kiosk
+              Smart Counter Ordering
             </p>
           </div>
         </div>

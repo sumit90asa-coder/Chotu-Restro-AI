@@ -264,7 +264,7 @@ export default function StaffPage() {
               required
               value={newStaff.username}
               onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })}
-              placeholder="ramesh@spicejunction.in"
+              placeholder="staff@restaurant.com"
               className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs focus:outline-none focus:border-[#E07A5F]"
             />
           </div>

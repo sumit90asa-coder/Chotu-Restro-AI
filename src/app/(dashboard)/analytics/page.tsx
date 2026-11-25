@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import { fetchAnalyticsOverview, AnalyticsOverview } from "@/lib/api/analytics";
 import { fetchLiveOrders } from "@/lib/api/orders";
+import { useAuth } from "@/lib/context/AuthContext";
 import { 
   BarChart3, 
   TrendingUp, 
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 
 export default function AnalyticsPage() {
+  const { user } = useAuth();
   const [dateRange, setDateRange] = useState<string>("today");
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [completedOrders, setCompletedOrders] = useState<any[]>([]);
@@ -165,23 +167,7 @@ export default function AnalyticsPage() {
                   <QrCode className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-white">UPI / Instant QR</p>
-                  <p className="text-[10px] text-stone-400">GPay, PhonePe, Paytm, BHIM</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-xs font-bold text-emerald-400">₹14,910.00</p>
-                <p className="text-[10px] text-stone-500 font-mono">60% of total</p>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                  <QrCode className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white">Direct UPI & Dynamic QR</p>
+                  <p className="text-xs font-bold text-white">Direct UPI &amp; Dynamic QR</p>
                   <p className="text-[10px] text-stone-400">Google Pay, PhonePe, Paytm</p>
                 </div>
               </div>
@@ -276,10 +262,10 @@ export default function AnalyticsPage() {
         <div className="space-y-4">
           <div className="p-6 rounded-2xl bg-stone-950 border border-stone-800 font-mono text-xs space-y-3">
             <div className="text-center pb-3 border-b border-stone-800">
-              <h2 className="text-sm font-bold text-white uppercase">THE SPICE JUNCTION</h2>
-              <p className="text-[10px] text-stone-400">Shop 4, Pali Hill Road, Bandra West, Mumbai 400050</p>
-              <p className="text-[10px] text-stone-400">GSTIN: 27AABCU9603R1ZM • Z-REPORT #Z-20261123</p>
-              <p className="text-[10px] text-stone-400">Closed By: Rahul Sharma (Manager)</p>
+              <h2 className="text-sm font-bold text-white uppercase">{user?.restaurantName || "RESTAURANT AUDIT REPORT"}</h2>
+              <p className="text-[10px] text-stone-400">Official Daily Reconciliation • GST Tax Ledger</p>
+              <p className="text-[10px] text-stone-400">Z-REPORT #{new Date().toISOString().slice(0, 10).replace(/-/g, "")}-01</p>
+              <p className="text-[10px] text-stone-400">Closed By: {user?.fullName || "Floor Manager"}</p>
             </div>
 
             <div className="space-y-1.5 py-2 border-b border-stone-800">

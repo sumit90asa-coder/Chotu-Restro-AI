@@ -9,6 +9,26 @@ export interface UserSession {
   fullName: string;
   role: string;
   restaurantId: string;
+  restaurantName?: string;
+  phone?: string;
+}
+
+export interface RegisterData {
+  fullName: string;
+  email: string;
+  phone: string;
+  password: string;
+  restaurantName: string;
+  restaurantType?: string;
+  address: string;
+  city: string;
+  state?: string;
+  pincode?: string;
+  country?: string;
+  gstin?: string;
+  fssaiNumber?: string;
+  businessHours?: string;
+  upiVpa?: string;
 }
 
 interface AuthContextType {
@@ -16,7 +36,8 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (data: RegisterData) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -37,26 +58,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuthToken(storedToken);
         setUser(JSON.parse(storedUser));
       } else {
-        // Default demo session for immediate exploration
-        const demoSession: UserSession = {
-          userId: "user-mgr-01",
-          email: "manager@spicejunction.in",
-          fullName: "Rahul Sharma (Manager)",
-          role: "manager",
-          restaurantId: "rest-spice-jct",
-        };
-        setUser(demoSession);
-        setToken("demo-token");
-        setAuthToken("demo-token");
+        // Genuine unauthenticated state — no fake demo credentials
+        setUser(null);
+        setToken(null);
+        setAuthToken(null);
       }
     } catch {
-      // fallback
+      setUser(null);
+      setToken(null);
+      setAuthToken(null);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (identifier: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
     try {
       const data = await apiFetch<{
@@ -64,18 +80,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user_id: string;
         role: string;
         restaurant_id: string;
+        restaurant_name?: string;
         full_name: string;
       }>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       });
 
       const session: UserSession = {
         userId: data.user_id,
-        email,
+        email: identifier.includes("@") ? identifier : "",
         fullName: data.full_name,
         role: data.role,
         restaurantId: data.restaurant_id,
+        restaurantName: data.restaurant_name || "Restaurant",
       };
 
       setToken(data.access_token);
@@ -87,6 +105,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Invalid credentials";
+      return { success: false, error: msg };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (regData: RegisterData): Promise<{ success: boolean; error?: string }> => {
+    setIsLoading(true);
+    try {
+      const payload = {
+        full_name: regData.fullName,
+        email: regData.email,
+        phone: regData.phone,
+        password: regData.password,
+        restaurant_name: regData.restaurantName,
+        restaurant_type: regData.restaurantType || "dinein",
+        address: regData.address,
+        city: regData.city,
+        state: regData.state || null,
+        pincode: regData.pincode || null,
+        country: regData.country || "India",
+        gstin: regData.gstin || null,
+        fssai_number: regData.fssaiNumber || null,
+        business_hours: regData.businessHours || "11:00 AM - 11:00 PM",
+        upi_vpa: regData.upiVpa || null,
+      };
+
+      const data = await apiFetch<{
+        access_token: string;
+        user_id: string;
+        role: string;
+        restaurant_id: string;
+        restaurant_name: string;
+        full_name: string;
+        email: string;
+        phone?: string;
+      }>("/auth/register", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      const session: UserSession = {
+        userId: data.user_id,
+        email: data.email,
+        fullName: data.full_name,
+        role: data.role,
+        restaurantId: data.restaurant_id,
+        restaurantName: data.restaurant_name,
+        phone: data.phone,
+      };
+
+      setToken(data.access_token);
+      setUser(session);
+      setAuthToken(data.access_token);
+      localStorage.setItem("chotu_auth_token", data.access_token);
+      localStorage.setItem("chotu_user_session", JSON.stringify(session));
+
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Registration failed";
       return { success: false, error: msg };
     } finally {
       setIsLoading(false);
@@ -111,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         isLoading,
         login,
+        register,
         logout,
       }}
     >

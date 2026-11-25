@@ -1,13 +1,36 @@
-const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
-const API_BASE_URL = rawApiUrl.replace(/\/+$/, "").endsWith("/api/v1")
-  ? rawApiUrl.replace(/\/+$/, "")
-  : `${rawApiUrl.replace(/\/+$/, "")}/api/v1`;
+function resolveApiBaseUrl(raw: string | undefined): string {
+  let url = raw?.trim() || "http://127.0.0.1:8000/api/v1";
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    if (url.includes("onrender.com")) {
+      url = `https://${url}`;
+    } else if (url.includes("chotu-backend") || url.includes("backend")) {
+      url = `https://${url}.onrender.com`;
+    } else if (url.includes("127.0.0.1") || url.includes("localhost")) {
+      url = `http://${url}`;
+    } else {
+      url = `https://${url}`;
+    }
+  }
+  const clean = url.replace(/\/+$/, "");
+  return clean.endsWith("/api/v1") ? clean : `${clean}/api/v1`;
+}
 
-export const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || (
-  process.env.NEXT_PUBLIC_API_URL
-    ? process.env.NEXT_PUBLIC_API_URL.replace(/^http/i, "ws").replace(/\/api\/v1\/?$/, "")
-    : "ws://127.0.0.1:8000"
-);
+function resolveWsBaseUrl(rawWs: string | undefined, apiBase: string): string {
+  if (rawWs) {
+    let ws = rawWs.trim();
+    if (!ws.startsWith("ws://") && !ws.startsWith("wss://")) {
+      ws = ws.replace(/^http/i, "ws");
+      if (!ws.startsWith("ws://") && !ws.startsWith("wss://")) {
+        ws = `wss://${ws}`;
+      }
+    }
+    return ws.replace(/\/+$/, "");
+  }
+  return apiBase.replace(/^http/i, "ws").replace(/\/api\/v1\/?$/, "");
+}
+
+export const API_BASE_URL = resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
+export const WS_BASE_URL = resolveWsBaseUrl(process.env.NEXT_PUBLIC_WS_URL, API_BASE_URL);
 
 let authToken: string | null = null;
 

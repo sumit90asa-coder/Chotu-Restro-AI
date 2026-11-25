@@ -23,19 +23,16 @@ import { fetchKDSTickets } from "@/lib/api/kds";
 import { fetchLowStockIngredients } from "@/lib/api/inventory";
 import { Table, KOT } from "@/types/restaurant";
 import { wsClient } from "@/lib/api/websocket";
+import { useAuth } from "@/lib/context/AuthContext";
 
 export default function DashboardPage() {
-  const [revenue, setRevenue] = useState<number>(24850);
-  const [orderCount, setOrderCount] = useState<number>(42);
+  const { user } = useAuth();
+  const [revenue, setRevenue] = useState<number>(0);
+  const [orderCount, setOrderCount] = useState<number>(0);
   const [tables, setTables] = useState<Table[]>([]);
   const [activeKots, setActiveKots] = useState<KOT[]>([]);
-  const [lowStockCount, setLowStockCount] = useState<number>(3);
-  const [topDishes, setTopDishes] = useState<Array<{ name: string; quantity: number; revenue: number }>>([
-    { name: "Butter Chicken", quantity: 28, revenue: 9520 },
-    { name: "Garlic Butter Naan", quantity: 64, revenue: 3840 },
-    { name: "Paneer Tikka Masala", quantity: 21, revenue: 6090 },
-    { name: "Dal Makhani", quantity: 18, revenue: 4680 },
-  ]);
+  const [lowStockCount, setLowStockCount] = useState<number>(0);
+  const [topDishes, setTopDishes] = useState<Array<{ name: string; quantity: number; revenue: number }>>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -78,7 +75,7 @@ export default function DashboardPage() {
 
     loadDashboardData();
 
-    wsClient.connect("rest-spice-jct");
+    wsClient.connect();
     const unsubscribe = wsClient.subscribe((evt) => {
       if (
         evt.type === "order_created" ||
@@ -138,10 +135,10 @@ export default function DashboardPage() {
         />
         <StatCard
           title="ACTIVE DINE-IN OCCUPANCY"
-          value={`${occupiedTables.length} / ${tables.length || 12} Tables`}
-          subtitle={`${vacantTables.length} tables currently vacant`}
+          value={tables.length > 0 ? `${occupiedTables.length} / ${tables.length} Tables` : "0 Tables"}
+          subtitle={tables.length > 0 ? `${vacantTables.length} tables currently vacant` : "0 tables configured"}
           icon={<Grid3X3 className="w-5 h-5 text-blue-400" />}
-          trend={{ value: `${Math.round(((occupiedTables.length || 6) / (tables.length || 12)) * 100)}% Capacity`, isPositive: true }}
+          trend={{ value: tables.length > 0 ? `${Math.round((occupiedTables.length / tables.length) * 100)}% Capacity` : "0% Capacity", isPositive: true }}
         />
         <StatCard
           title="ORDERS COMPLETED"
@@ -176,42 +173,48 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-              {(tables.length > 0 ? tables : [
-                { id: "T-01", label: "T-01", status: "occupied", currentBill: 920 },
-                { id: "T-02", label: "T-02", status: "vacant", currentBill: 0 },
-                { id: "T-03", label: "T-03", status: "billed", currentBill: 1420 },
-                { id: "T-04", label: "T-04", status: "occupied", currentBill: 891 },
-                { id: "T-05", label: "T-05", status: "occupied", currentBill: 450 },
-                { id: "T-06", label: "T-06", status: "vacant", currentBill: 0 },
-              ]).slice(0, 12).map((tbl) => (
+            {tables.length === 0 ? (
+              <div className="py-10 text-center text-stone-500 bg-stone-900/30 rounded-xl border border-dashed border-stone-800">
+                <Grid3X3 className="w-8 h-8 mx-auto text-stone-600 mb-2" />
+                <p className="text-xs font-mono">No dining tables configured yet.</p>
                 <Link
-                  key={tbl.id}
-                  href={`/pos`}
-                  className={`p-3 rounded-xl border flex flex-col justify-between transition-all hover:scale-105 ${
-                    tbl.status === "occupied"
-                      ? "bg-amber-950/20 border-amber-500/40 text-amber-200"
-                      : tbl.status === "billed"
-                      ? "bg-blue-950/20 border-blue-500/40 text-blue-200"
-                      : "bg-stone-900/60 border-stone-800 text-stone-400"
-                  }`}
+                  href="/tables"
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#E07A5F] text-stone-950 text-xs font-bold hover:bg-[#d0694e] transition-colors"
                 >
-                  <span className="text-xs font-bold text-white">{tbl.label}</span>
-                  <div className="mt-2">
-                    <span className="text-[10px] uppercase font-mono block tracking-wider">
-                      {tbl.status}
-                    </span>
-                    {tbl.currentBill ? (
-                      <span className="text-[11px] font-bold text-emerald-400 block mt-0.5">
-                        ₹{tbl.currentBill}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-stone-600 block mt-0.5">—</span>
-                    )}
-                  </div>
+                  Configure Tables &amp; Floor Plan
                 </Link>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                {tables.slice(0, 12).map((tbl) => (
+                  <Link
+                    key={tbl.id}
+                    href={`/pos`}
+                    className={`p-3 rounded-xl border flex flex-col justify-between transition-all hover:scale-105 ${
+                      tbl.status === "occupied"
+                        ? "bg-amber-950/20 border-amber-500/40 text-amber-200"
+                        : tbl.status === "billed"
+                        ? "bg-blue-950/20 border-blue-500/40 text-blue-200"
+                        : "bg-stone-900/60 border-stone-800 text-stone-400"
+                    }`}
+                  >
+                    <span className="text-xs font-bold text-white">{tbl.label}</span>
+                    <div className="mt-2">
+                      <span className="text-[10px] uppercase font-mono block tracking-wider">
+                        {tbl.status}
+                      </span>
+                      {tbl.currentBill ? (
+                        <span className="text-[11px] font-bold text-emerald-400 block mt-0.5">
+                          ₹{tbl.currentBill}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-stone-600 block mt-0.5">—</span>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Top Selling Dishes Velocity */}
@@ -227,23 +230,29 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            <div className="divide-y divide-stone-800/80">
-              {topDishes.map((dish, idx) => (
-                <div key={idx} className="py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-5 text-xs font-mono font-bold text-stone-500">#{idx + 1}</span>
-                    <div>
-                      <p className="text-xs font-semibold text-white">{dish.name}</p>
-                      <p className="text-[10px] text-stone-400">{dish.quantity} orders today</p>
+            {topDishes.length === 0 ? (
+              <div className="py-8 text-center text-stone-500 font-mono text-xs">
+                No orders processed today. Sales velocity will show here.
+              </div>
+            ) : (
+              <div className="divide-y divide-stone-800/80">
+                {topDishes.map((dish, idx) => (
+                  <div key={idx} className="py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 text-xs font-mono font-bold text-stone-500">#{idx + 1}</span>
+                      <div>
+                        <p className="text-xs font-semibold text-white">{dish.name}</p>
+                        <p className="text-[10px] text-stone-400">{dish.quantity} orders today</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-emerald-400">₹{dish.revenue.toLocaleString("en-IN")}</p>
+                      <p className="text-[10px] text-stone-500 font-mono">₹{Math.round(dish.revenue / dish.quantity)} avg</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs font-bold text-emerald-400">₹{dish.revenue.toLocaleString("en-IN")}</p>
-                    <p className="text-[10px] text-stone-500 font-mono">₹{Math.round(dish.revenue / dish.quantity)} avg</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -283,33 +292,15 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            <div className="space-y-2.5">
-              <div className="p-2.5 rounded-xl bg-stone-900/80 border border-stone-800/80 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-stone-200">Fresh Paneer (Cottage Cheese)</p>
-                  <p className="text-[10px] text-rose-400 font-mono">Remaining: 2.1 kg (Min: 5 kg)</p>
-                </div>
-                <Link
-                  href="/inventory"
-                  className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-[11px] font-medium"
-                >
-                  Restock
-                </Link>
+            {lowStockCount === 0 ? (
+              <div className="py-6 text-center text-stone-500 font-mono text-xs">
+                All inventory items are currently above safety thresholds.
               </div>
-
-              <div className="p-2.5 rounded-xl bg-stone-900/80 border border-stone-800/80 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-stone-200">Amul Butter Salted</p>
-                  <p className="text-[10px] text-amber-400 font-mono">Remaining: 3.4 kg (Min: 6 kg)</p>
-                </div>
-                <Link
-                  href="/inventory"
-                  className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-[11px] font-medium"
-                >
-                  Restock
-                </Link>
+            ) : (
+              <div className="py-4 text-center text-rose-400 font-mono text-xs">
+                {lowStockCount} items need attention. Check Inventory ledger.
               </div>
-            </div>
+            )}
 
             <div className="mt-4 pt-3 border-t border-stone-800 text-center">
               <Link href="/inventory" className="text-xs text-stone-400 hover:text-white transition-colors">

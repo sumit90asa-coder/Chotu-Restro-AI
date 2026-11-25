@@ -101,7 +101,7 @@ export default function TablesPage() {
   useEffect(() => {
     loadTables();
 
-    wsClient.connect("rest-spice-jct");
+    wsClient.connect();
     const unsubscribe = wsClient.subscribe((evt) => {
       if (
         evt.type === "table_updated" || 

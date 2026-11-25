@@ -16,7 +16,7 @@ function QRMenuContent() {
   // Prefer exact query token; fallback to tableParam format
   const effectiveToken = queryToken || (tableParam?.startsWith("qr-") ? tableParam : (tableParam ? `qr-${tableParam.toLowerCase()}` : "qr-t01-demo"));
 
-  const [restaurantName, setRestaurantName] = useState<string>("The Spice Junction");
+  const [restaurantName, setRestaurantName] = useState<string>("Dine-In Menu");
   const [tableLabel, setTableLabel] = useState<string>(
     tableParam ? (tableParam.toUpperCase().startsWith("T-") ? `Table ${tableParam.replace(/^T-/i, "")}` : `Table ${tableParam}`) : "Dining Table"
   );

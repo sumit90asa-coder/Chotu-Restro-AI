@@ -31,7 +31,7 @@ export default function OrdersPage() {
   useEffect(() => {
     loadOrders();
 
-    wsClient.connect("rest-spice-jct");
+    wsClient.connect();
     const unsubscribe = wsClient.subscribe((evt) => {
       if (evt.type === "order_created" || evt.type === "order_updated") {
         loadOrders();

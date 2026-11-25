@@ -551,7 +551,7 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
             <div className="flex items-start justify-between border-b border-stone-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-white font-mono">Your Table Cart</h3>
-                <p className="text-xs text-stone-400 font-mono mt-0.5">{tableLabel} • The Spice Junction</p>
+                <p className="text-xs text-stone-400 font-mono mt-0.5">{tableLabel} • Dine-In Guest</p>
               </div>
               <button
                 onClick={() => setShowCartDrawer(false)}

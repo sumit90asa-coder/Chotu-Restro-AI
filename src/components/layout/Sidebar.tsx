@@ -94,7 +94,7 @@ export function Sidebar() {
           {!collapsed && (
             <div className="flex flex-col min-w-0">
               <span className="font-bold text-sm tracking-wide text-white truncate">Chotu Restro AI</span>
-              <span className="text-[10px] text-stone-400 font-mono uppercase tracking-wider truncate">The Spice Junction</span>
+              <span className="text-[10px] text-stone-400 font-mono uppercase tracking-wider truncate">{user?.restaurantName || "My Restaurant"}</span>
             </div>
           )}
         </Link>

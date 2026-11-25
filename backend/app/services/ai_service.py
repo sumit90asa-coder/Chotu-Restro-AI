@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.models.restaurant import Restaurant
 from app.models.order import Order, OrderStatus, PaymentStatus, OrderMode
 from app.models.table import DiningTable, TableStatus
 from app.models.kot import KOT, KOTStatus
@@ -22,6 +23,9 @@ class AIService:
         including floor, POS, CRM loyalty, delivery dispatch, and supplier procurement.
         """
         # 1. Fetch factual operational context from Database
+        restaurant = db.query(Restaurant).filter(Restaurant.id == restaurant_id).first()
+        rest_name = restaurant.name if restaurant else "the restaurant"
+
         total_tables = db.query(DiningTable).filter(DiningTable.restaurant_id == restaurant_id).count()
         occupied_tables = db.query(DiningTable).filter(DiningTable.restaurant_id == restaurant_id, DiningTable.status == TableStatus.OCCUPIED).count()
         occupied_table_labels = [t.label for t in db.query(DiningTable).filter(DiningTable.restaurant_id == restaurant_id, DiningTable.status == TableStatus.OCCUPIED).all()]
@@ -61,7 +65,7 @@ class AIService:
         # Check if Google Gemini API key is configured
         if settings.GEMINI_API_KEY:
             try:
-                system_prompt = f"""You are Chotu, an intelligent, respectful Indian restaurant operating assistant for 'The Spice Junction'.
+                system_prompt = f"""You are Chotu, an intelligent, respectful Indian restaurant operating assistant for '{rest_name}'.
 Current Live Real-Time Database State:
 - Today's Total Sales: ₹ {today_sales:.2f}
 - Occupied Tables: {occupied_tables}/{total_tables} ({', '.join(occupied_table_labels) if occupied_table_labels else 'None'})
@@ -88,42 +92,53 @@ Never invent financial or inventory metrics not in this context.
             except Exception:
                 reply = ""  # fallback to deterministic handler
 
-        # Deterministic Grounded Handler (always executes if no Gemini key or on network failure)
+        # Intent Classification
+        if "sale" in msg_lower or "revenue" in msg_lower or "kamaai" in msg_lower or "earning" in msg_lower:
+            intent = "QUERY_SALES"
+        elif "table" in msg_lower or "occupan" in msg_lower or "seated" in msg_lower:
+            intent = "QUERY_TABLES"
+        elif "customer" in msg_lower or "guest" in msg_lower or "crm" in msg_lower or "loyalty" in msg_lower:
+            intent = "QUERY_CRM"
+        elif "delivery" in msg_lower or "dispatch" in msg_lower or "rider" in msg_lower or "otp" in msg_lower:
+            intent = "QUERY_DELIVERY"
+        elif "supplier" in msg_lower or "purchase order" in msg_lower or "po" in msg_lower or "vendor" in msg_lower:
+            intent = "QUERY_SUPPLIERS"
+        elif "valuation" in msg_lower or "worth" in msg_lower:
+            intent = "QUERY_INVENTORY_VALUATION"
+        elif "stock" in msg_lower or "inventory" in msg_lower or "ingredient" in msg_lower or "khatam" in msg_lower:
+            intent = "QUERY_INVENTORY"
+        elif "kitchen" in msg_lower or "kot" in msg_lower or "prep" in msg_lower:
+            intent = "QUERY_KITCHEN"
+        elif "garlic naan" in msg_lower or "add" in msg_lower:
+            intent = "ADD_ITEMS"
+
+        # Deterministic Grounded Handler (executes if Gemini key is not configured or network failure)
         if not reply:
-            if "sale" in msg_lower or "revenue" in msg_lower or "kamaai" in msg_lower or "earning" in msg_lower:
-                intent = "QUERY_SALES"
+            if intent == "QUERY_SALES":
                 reply = f"Today's total settled sales are ₹ {today_sales:,.2f} across {len(today_paid_orders)} settled bills."
-            elif "table" in msg_lower or "occupan" in msg_lower or "seated" in msg_lower:
-                intent = "QUERY_TABLES"
+            elif intent == "QUERY_TABLES":
                 if occupied_tables > 0:
                     reply = f"{occupied_tables} out of {total_tables} tables are currently occupied: {', '.join(occupied_table_labels)}."
                 else:
                     reply = f"All {total_tables} dining tables are currently vacant and ready for seating."
-            elif "customer" in msg_lower or "guest" in msg_lower or "crm" in msg_lower or "loyalty" in msg_lower:
-                intent = "QUERY_CRM"
+            elif intent == "QUERY_CRM":
                 reply = f"There are currently {total_customers} registered guests in the loyalty CRM database."
-            elif "delivery" in msg_lower or "dispatch" in msg_lower or "rider" in msg_lower or "otp" in msg_lower:
-                intent = "QUERY_DELIVERY"
+            elif intent == "QUERY_DELIVERY":
                 reply = f"There are {active_deliveries} active delivery orders currently in kitchen prep or out with riders."
-            elif "supplier" in msg_lower or "purchase order" in msg_lower or "po" in msg_lower or "vendor" in msg_lower:
-                intent = "QUERY_SUPPLIERS"
+            elif intent == "QUERY_SUPPLIERS":
                 reply = f"You have {pending_pos} pending purchase orders awaiting vendor delivery receipt."
-            elif "valuation" in msg_lower or "worth" in msg_lower:
-                intent = "QUERY_INVENTORY_VALUATION"
+            elif intent == "QUERY_INVENTORY_VALUATION":
                 reply = f"Total raw inventory valuation is ₹ {total_valuation:,.2f} calculated using Weighted Average Cost (WAC)."
-            elif "stock" in msg_lower or "inventory" in msg_lower or "ingredient" in msg_lower or "khatam" in msg_lower:
-                intent = "QUERY_INVENTORY"
+            elif intent == "QUERY_INVENTORY":
                 if low_stock_names:
                     reply = f"⚠️ Low stock alert for {len(low_stock_names)} item(s): {', '.join(low_stock_names)}. Reorder is recommended."
                     suggested_action = "DISPATCH_PURCHASE_ORDER"
                     action_data = {"ingredients": [ing.name for ing in low_stock_ingredients]}
                 else:
                     reply = f"All raw ingredients are stocked above safety thresholds. Total stock valuation: ₹ {total_valuation:,.2f}."
-            elif "kitchen" in msg_lower or "kot" in msg_lower or "prep" in msg_lower:
-                intent = "QUERY_KITCHEN"
+            elif intent == "QUERY_KITCHEN":
                 reply = f"There are currently {active_kots} active KOT tickets cooking across the kitchen stations."
-            elif "garlic naan" in msg_lower or "add" in msg_lower:
-                intent = "ADD_ITEMS"
+            elif intent == "ADD_ITEMS":
                 reply = "Noted! To add items to a table, use the POS terminal or specify the exact table and items."
             else:
                 reply = f"Chotu is active! Floor: {occupied_tables}/{total_tables} occupied, {active_kots} KOTs cooking, {total_customers} CRM guests, ₹ {today_sales:,.2f} sales today."

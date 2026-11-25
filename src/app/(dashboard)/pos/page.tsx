@@ -18,9 +18,11 @@ import {
   transmitTableKot, 
   settleTableBill 
 } from "@/lib/api/pos";
+import { useAuth } from "@/lib/context/AuthContext";
 import { Printer, CheckCircle2, QrCode, CreditCard, Banknote, ShieldCheck } from "lucide-react";
 
 function PosContent() {
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const tableParam = searchParams ? searchParams.get("table") : null;
 
@@ -244,7 +246,7 @@ function PosContent() {
           {/* Dynamic UPI Preview if UPI is chosen */}
           {paymentMethod === "upi" && (
             <div className="p-4 rounded-xl bg-stone-900/80 border border-stone-800 text-center space-y-2">
-              <p className="text-xs font-mono text-stone-300">VPA: spicejunction@okhdfcbank</p>
+              <p className="text-xs font-mono text-stone-300">VPA: {user?.restaurantName ? `${user.restaurantName.toLowerCase().replace(/[^a-z0-9]/g, "")}@upi` : "restaurant@upi"}</p>
               <div className="w-32 h-32 mx-auto bg-white rounded-lg flex items-center justify-center p-2 shadow-md">
                 <QrCode className="w-24 h-24 text-stone-950" />
               </div>
@@ -283,10 +285,9 @@ function PosContent() {
           {/* Printable Receipt Preview Card */}
           <div className="p-6 rounded-xl bg-stone-950 border border-stone-800 font-mono text-xs text-stone-300 space-y-3 print:border-none print:p-0">
             <div className="text-center space-y-0.5 border-b border-stone-800 pb-3">
-              <h2 className="text-base font-bold text-white uppercase">The Spice Junction</h2>
-              <p className="text-[10px] text-stone-400">Shop 4, Pali Hill Road, Bandra West, Mumbai 400050</p>
-              <p className="text-[10px] text-stone-400">GSTIN: 27AABCU9603R1ZM • FSSAI: 11521005000432</p>
-              <p className="text-[10px] text-stone-400">Ph: +91 98200 12345</p>
+              <h2 className="text-base font-bold text-white uppercase">{user?.restaurantName || "RESTAURANT TAX INVOICE"}</h2>
+              <p className="text-[10px] text-stone-400">Official Computerized Tax Invoice • Dine-In POS</p>
+              <p className="text-[10px] text-stone-400">Date: {new Date().toLocaleDateString("en-IN")}</p>
             </div>
 
             <div className="flex justify-between text-[11px] pt-1">

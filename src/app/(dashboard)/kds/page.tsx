@@ -31,7 +31,7 @@ export default function KdsPage() {
     loadTickets();
 
     // Connect real-time WebSocket for live kitchen tickets
-    wsClient.connect("rest-spice-jct");
+    wsClient.connect();
     const unsubscribe = wsClient.subscribe((event) => {
       if (event.type === "kot_created" || event.type === "kot_updated" || event.type === "order_created") {
         loadTickets();
