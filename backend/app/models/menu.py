@@ -54,6 +54,12 @@ class MenuItem(Base):
     recipe_items = relationship("RecipeItem", back_populates="menu_item", cascade="all, delete-orphan")
     variants = relationship("MenuItemVariant", back_populates="menu_item", cascade="all, delete-orphan")
 
+    @property
+    def category_name(self) -> str:
+        if self.category and self.category.name:
+            return self.category.name
+        return "Mains"
+
 class MenuItemVariant(Base):
     __tablename__ = "menu_item_variants"
     

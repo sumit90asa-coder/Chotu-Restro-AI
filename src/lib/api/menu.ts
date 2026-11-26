@@ -13,7 +13,9 @@ export interface BackendMenuItem {
   name: string;
   description: string;
   price: number | string;
-  category: "starters" | "mains" | "breads" | "beverages" | "desserts";
+  category_id?: string;
+  category_name?: string;
+  category: "starters" | "mains" | "breads" | "beverages" | "desserts" | string;
   dietary: Dietary;
   station: "tandoor" | "curry" | "bar" | "pantry";
   is_active: boolean;
@@ -87,13 +89,16 @@ export function mapBackendMenuItem(item: BackendMenuItem): MenuItem {
     ? Boolean((item as any).is_in_stock)
     : (item.in_stock !== undefined ? Boolean(item.in_stock) : true);
 
-  const rawCat = item.category || (item as any).category_id || "mains";
-  const cleanCat = String(rawCat).replace(/^cat-/, "") as any;
+  const rawCat = (item as any).category_name || item.category || (item as any).category_id || "mains";
+  let cleanCat = String(rawCat).replace(/^cat-/, "");
+  if (/^[a-f0-9]{6,}$/i.test(cleanCat)) {
+    cleanCat = (item as any).category_name || "Mains";
+  }
 
   return {
     id: item.id,
     name: item.name,
-    category: cleanCat,
+    category: cleanCat as any,
     description: item.description,
     price: Number(item.price),
     dietary: item.dietary,
@@ -139,4 +144,10 @@ export async function updateMenuItem(dishId: string, updates: { inStock?: boolea
     body: JSON.stringify(body),
   });
   return mapBackendMenuItem(data);
+}
+
+export async function deleteMenuItem(dishId: string): Promise<{ success: boolean; message: string }> {
+  return apiFetch<{ success: boolean; message: string }>(`/menu/items/${dishId}`, {
+    method: "DELETE",
+  });
 }

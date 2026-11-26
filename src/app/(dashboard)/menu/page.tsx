@@ -7,7 +7,8 @@ import { MenuItem } from "@/types/restaurant";
 import { 
   fetchMenuItems, 
   updateMenuItem, 
-  createMenuItem 
+  createMenuItem,
+  deleteMenuItem 
 } from "@/lib/api/menu";
 import { 
   Plus, 
@@ -40,6 +41,8 @@ export default function MenuManagementPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [editItemModal, setEditItemModal] = useState<MenuItem | null>(null);
+  const [deleteItemModal, setDeleteItemModal] = useState<MenuItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [showNewModal, setShowNewModal] = useState<boolean>(false);
   const [newItem, setNewItem] = useState({
     name: "",
@@ -176,6 +179,21 @@ export default function MenuManagementPage() {
     }
   };
 
+  const handleDeleteMenuItem = async () => {
+    if (!deleteItemModal) return;
+    setIsDeleting(true);
+    try {
+      await deleteMenuItem(deleteItemModal.id);
+      setItems((prev) => prev.filter((i) => i.id !== deleteItemModal.id));
+      showToast(`Dish '${deleteItemModal.name}' removed from menu successfully`);
+      setDeleteItemModal(null);
+    } catch (err: any) {
+      showToast(err.message || "Failed to delete dish");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleCreateMenuItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItem.name) return;
@@ -209,7 +227,11 @@ export default function MenuManagementPage() {
   };
 
   const filteredItems = items.filter((it) => {
-    if (selectedCategory !== "all" && it.category !== selectedCategory) return false;
+    if (selectedCategory !== "all") {
+      const itemCat = String(it.category || "").toLowerCase();
+      const selCat = selectedCategory.toLowerCase();
+      if (!itemCat.includes(selCat) && !selCat.includes(itemCat)) return false;
+    }
     if (
       searchQuery &&
       !it.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -344,7 +366,7 @@ export default function MenuManagementPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4 capitalize text-stone-300 font-medium">
-                      {dish.category}
+                      {dish.category && !/^[a-f0-9]{6,}$/i.test(dish.category) ? dish.category : "Mains"}
                     </td>
                     <td className="px-4 py-4 font-mono text-[11px] text-stone-400 capitalize">
                       {dish.station}
@@ -381,6 +403,13 @@ export default function MenuManagementPage() {
                           title="Edit Dish Pricing"
                         >
                           <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteItemModal(dish)}
+                          className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-rose-950/40 text-stone-400 hover:text-rose-400 hover:border-rose-800/40 transition-colors cursor-pointer"
+                          title="Delete Menu Item"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
@@ -429,6 +458,52 @@ export default function MenuManagementPage() {
                 className="px-4 py-2 rounded-xl bg-[#E07A5F] text-stone-950 font-bold text-xs cursor-pointer"
               >
                 Save Changes
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteItemModal && (
+        <Modal
+          isOpen={!!deleteItemModal}
+          onClose={() => setDeleteItemModal(null)}
+          title="Delete Menu Item"
+          description="Remove dish from active catalog"
+          maxWidth="sm"
+        >
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-2xl bg-rose-950/20 border border-rose-500/30 flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400 flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-white">
+                  Remove "{deleteItemModal.name}"?
+                </p>
+                <p className="text-stone-400 leading-relaxed">
+                  This dish will be deactivated immediately and will no longer appear on POS terminals, customer QR menus, or kitchen displays.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-stone-800">
+              <button
+                type="button"
+                onClick={() => setDeleteItemModal(null)}
+                className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 text-xs font-semibold hover:bg-stone-700 transition-colors cursor-pointer"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteMenuItem}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Confirm Delete"}
               </button>
             </div>
           </div>

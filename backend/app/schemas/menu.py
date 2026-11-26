@@ -73,6 +73,7 @@ class MenuItemResponse(BaseModel):
     id: str
     restaurant_id: str
     category_id: str
+    category_name: Optional[str] = None
     name: str
     description: Optional[str] = None
     price: Decimal
