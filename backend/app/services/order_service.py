@@ -210,7 +210,13 @@ class OrderService:
 
     @staticmethod
     def settle_bill(db: Session, order_id: str, payment_method: str = "cash") -> Order:
-        order = db.query(Order).with_for_update().filter(Order.id == order_id).first()
+        order = (
+            db.query(Order)
+            .filter(Order.id == order_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+            .first()
+        )
         if not order:
             raise ValueError("Order not found")
 

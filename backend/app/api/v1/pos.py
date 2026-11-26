@@ -156,12 +156,23 @@ async def settle_table_bill(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    table = db.query(DiningTable).filter(DiningTable.id == table_id, DiningTable.restaurant_id == current_user.restaurant_id).first()
+    table = (
+        db.query(DiningTable)
+        .filter(DiningTable.id == table_id, DiningTable.restaurant_id == current_user.restaurant_id)
+        .with_for_update()
+        .first()
+    )
     if not table:
         raise HTTPException(status_code=404, detail="Table not found")
     if not table.current_order_id:
         raise HTTPException(status_code=409, detail="Table has no active order to settle or bill was already settled")
-    order = db.query(Order).filter(Order.id == table.current_order_id).first()
+    order = (
+        db.query(Order)
+        .filter(Order.id == table.current_order_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+        .first()
+    )
     if not order or not order.items:
         raise HTTPException(status_code=400, detail="Cannot settle an empty order")
     try:
