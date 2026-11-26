@@ -6,7 +6,7 @@ export interface DeliveryOrderData {
   customer_name: string;
   customer_phone: string;
   delivery_address: string;
-  status: "placed" | "confirmed" | "dispatched" | "delivered" | "cancelled";
+  status: "new" | "preparing" | "ready" | "out-for-delivery" | "completed" | "cancelled";
   items_summary: string;
   total_amount: number;
   rider_name?: string | null;
@@ -32,7 +32,7 @@ export interface DeliveryDispatchResponse {
 
 export interface DeliveryOTPVerifyResponse {
   order_id: string;
-  verified: boolean;
+  verified?: boolean;
   status: string;
   message: string;
 }
@@ -59,5 +59,23 @@ export async function verifyDeliveryOTP(
   return apiFetch<DeliveryOTPVerifyResponse>(`/delivery/orders/${orderId}/verify-otp`, {
     method: "POST",
     body: JSON.stringify({ otp }),
+  });
+}
+
+export async function regenerateDeliveryOTP(
+  orderId: string
+): Promise<{ status: string; message: string; order_id: string; delivery_otp: string }> {
+  return apiFetch(`/delivery/orders/${orderId}/regenerate-otp`, {
+    method: "POST",
+  });
+}
+
+export async function managerOverrideDelivery(
+  orderId: string,
+  reason?: string
+): Promise<DeliveryOTPVerifyResponse> {
+  return apiFetch<DeliveryOTPVerifyResponse>(`/delivery/orders/${orderId}/manager-override`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason || "Manager verified customer handover manually" }),
   });
 }

@@ -52,6 +52,7 @@ class OrderService:
         order_num = f"{table.label}-{order_seq}"
         token_num = f"IND-{now.strftime('%Y%m%d')}-{order_seq:04d}"
         
+        initial_status = OrderStatus.NEW if placed_by == PlacedBy.POS else OrderStatus.PREPARING
         order = Order(
             id=f"ord-{uuid.uuid4().hex[:10]}",
             restaurant_id=restaurant_id,
@@ -60,7 +61,7 @@ class OrderService:
             token_number=token_num,
             customer_name=customer_name or f"Table {table.label} Guest",
             mode=OrderMode.DINE_IN,
-            status=OrderStatus.PREPARING,
+            status=initial_status,
             payment_status=PaymentStatus.PENDING,
             placed_by=placed_by,
             subtotal=Decimal("0.00"),
@@ -138,6 +139,23 @@ class OrderService:
                 db.add(new_item)
 
         db.flush()
+        remaining_count = db.query(OrderItem).filter(OrderItem.order_id == order_id).count()
+        if remaining_count == 0:
+            kot_count = db.query(KOT).filter(KOT.order_id == order_id).count()
+            if kot_count == 0 and order.payment_status != PaymentStatus.PAID:
+                if order.table_id:
+                    table = db.query(DiningTable).filter(DiningTable.id == order.table_id).first()
+                    if table:
+                        table.current_order_id = None
+                        table.status = TableStatus.VACANT
+                        table.current_bill = Decimal("0.00")
+                        table.captain_name = None
+                        table.opened_at = None
+                        table.assigned_waiter_id = None
+                db.delete(order)
+                db.commit()
+                return None
+
         # Recalculate bill totals
         OrderService.recalculate_order_bill(db, order)
         db.commit()
@@ -153,6 +171,8 @@ class OrderService:
         subtotal, cgst, sgst, sc, disc, total = BillingService.calculate_totals(
             item_dicts, restaurant, order.discount
         )
+        if order.discount > subtotal:
+            order.discount = subtotal
         order.subtotal = subtotal
         order.cgst = cgst
         order.sgst = sgst
@@ -186,6 +206,9 @@ class OrderService:
 
         if not items or len(items) == 0:
             raise ValueError("Cannot fire KOT with empty order")
+
+        if order.status == OrderStatus.NEW:
+            order.status = OrderStatus.PREPARING
 
         # Get next sequential KOT number atomically on PostgreSQL
         last_kot_q = db.query(KOT).filter(KOT.restaurant_id == order.restaurant_id).order_by(KOT.kot_number.desc())

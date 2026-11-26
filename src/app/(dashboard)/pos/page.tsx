@@ -12,6 +12,8 @@ import {
   addOrUpdateOrderItem,
   removeOrderItem,
   transmitTableKot,
+  applyTableDiscount,
+  updateTableOrderMode,
   settleTableBill,
   cancelTableOrder
 } from "@/lib/api/pos";
@@ -30,6 +32,9 @@ function PosContent() {
   const [selectedTableId, setSelectedTableId] = useState<string>(tableParam || "");
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [ledgerItems, setLedgerItems] = useState<OrderItem[]>([]);
+  const [orderDiscount, setOrderDiscount] = useState<number>(0);
+  const [orderMode, setOrderMode] = useState<"dine_in" | "takeaway" | "delivery">("dine_in");
+  const [deliveryAddress, setDeliveryAddress] = useState<string>("");
   const [taxConfig, setTaxConfig] = useState<{ cgst: number; sgst: number; serviceCharge: number }>({
     cgst: 2.5,
     sgst: 2.5,
@@ -43,6 +48,7 @@ function PosContent() {
     customerName?: string;
     items: OrderItem[];
     subtotal: number;
+    discount: number;
     cgst: number;
     sgst: number;
     serviceCharge: number;
@@ -122,27 +128,95 @@ function PosContent() {
     };
   }, [tableParam, user?.restaurantId]);
 
+  const normalizeMode = (raw?: string | null): "dine_in" | "takeaway" | "delivery" => {
+    const m = (raw || "").toLowerCase().replace("-", "_");
+    if (m === "takeaway") return "takeaway";
+    if (m === "delivery") return "delivery";
+    return "dine_in";
+  };
+
   // Fetch or sync table order
   useEffect(() => {
     async function syncTableOrder() {
+      if (!selectedTableId) return;
+      const savedLocalMode =
+        typeof window !== "undefined"
+          ? localStorage.getItem(`chotu_pos_mode_${selectedTableId}`)
+          : null;
+      const savedLocalAddress =
+        typeof window !== "undefined"
+          ? localStorage.getItem(`chotu_pos_address_${selectedTableId}`)
+          : null;
       try {
         const orderData = await getTableOrder(selectedTableId);
         setActiveOrder(orderData?.order || null);
         setLedgerItems(orderData?.items || []);
+        const disc = Number(orderData?.order?.discount ?? orderData?.order?.discount_amount ?? 0);
+        setOrderDiscount(isNaN(disc) ? 0 : disc);
+
+        const isActiveOrder = Boolean(orderData?.order?.id && !orderData.order.id.startsWith("draft-"));
+        if (isActiveOrder && orderData?.order?.mode) {
+          const resolved = normalizeMode(orderData.order.mode);
+          setOrderMode(resolved);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(`chotu_pos_mode_${selectedTableId}`, resolved);
+          }
+          const remoteAddr = orderData.order.delivery_address || "";
+          setDeliveryAddress(remoteAddr || savedLocalAddress || "");
+        } else if (savedLocalMode) {
+          setOrderMode(normalizeMode(savedLocalMode));
+          setDeliveryAddress(savedLocalAddress || "");
+        } else {
+          setOrderMode("dine_in");
+          setDeliveryAddress("");
+        }
       } catch (err) {
         console.warn("Could not fetch remote table order:", err);
         setActiveOrder(null);
         setLedgerItems([]);
+        if (savedLocalMode) {
+          setOrderMode(normalizeMode(savedLocalMode));
+        }
+        if (savedLocalAddress) {
+          setDeliveryAddress(savedLocalAddress);
+        }
       }
     }
     syncTableOrder();
   }, [selectedTableId]);
 
+  const handleChangeOrderMode = async (nextMode: "dine_in" | "takeaway" | "delivery") => {
+    setOrderMode(nextMode);
+    if (typeof window !== "undefined" && selectedTableId) {
+      localStorage.setItem(`chotu_pos_mode_${selectedTableId}`, nextMode);
+    }
+    if (selectedTableId && ledgerItems.length > 0) {
+      try {
+        await updateTableOrderMode(selectedTableId, nextMode, deliveryAddress || undefined);
+      } catch {
+        // Local persistence still preserved
+      }
+    }
+  };
+
+  const handleChangeDeliveryAddress = (addr: string) => {
+    setDeliveryAddress(addr);
+    if (typeof window !== "undefined" && selectedTableId) {
+      localStorage.setItem(`chotu_pos_address_${selectedTableId}`, addr);
+    }
+  };
+
   const handleAddDish = async (dish: MenuItem, notes?: string) => {
+    const wasEmpty = ledgerItems.length === 0;
     try {
-      const res = await addOrUpdateOrderItem(selectedTableId, dish.id, 1, notes);
+      let res = await addOrUpdateOrderItem(selectedTableId, dish.id, 1, notes);
+      if (wasEmpty && (orderMode !== "dine_in" || deliveryAddress.trim())) {
+        res = await updateTableOrderMode(selectedTableId, orderMode, deliveryAddress.trim() || undefined);
+      }
       setActiveOrder(res.order);
       setLedgerItems(res.items);
+      const disc = Number(res?.order?.discount ?? res?.order?.discount_amount ?? 0);
+      if (!isNaN(disc)) setOrderDiscount(disc);
       setTables((prev) =>
         prev.map((t) =>
           t.id === selectedTableId
@@ -160,10 +234,12 @@ function PosContent() {
       const res = await addOrUpdateOrderItem(selectedTableId, dishId, delta);
       setActiveOrder(res.order);
       setLedgerItems(res.items);
+      const disc = Number(res?.order?.discount ?? res?.order?.discount_amount ?? 0);
+      if (!isNaN(disc)) setOrderDiscount(disc);
       setTables((prev) =>
         prev.map((t) =>
           t.id === selectedTableId
-            ? { ...t, currentBill: Number(res.order.total_amount || 0) }
+            ? { ...t, status: res.items.length === 0 ? "vacant" : t.status, currentBill: Number(res.order.total_amount || 0) }
             : t
         )
       );
@@ -177,10 +253,12 @@ function PosContent() {
       const res = await removeOrderItem(selectedTableId, dishId);
       setActiveOrder(res.order);
       setLedgerItems(res.items);
+      const disc = Number(res?.order?.discount ?? res?.order?.discount_amount ?? 0);
+      if (!isNaN(disc)) setOrderDiscount(disc);
       setTables((prev) =>
         prev.map((t) =>
           t.id === selectedTableId
-            ? { ...t, currentBill: Number(res.order.total_amount || 0) }
+            ? { ...t, status: res.items.length === 0 ? "vacant" : t.status, currentBill: Number(res.order.total_amount || 0) }
             : t
         )
       );
@@ -195,6 +273,13 @@ function PosContent() {
       showToast(`Active table session cleared and marked Vacant.`);
       setActiveOrder(null);
       setLedgerItems([]);
+      setOrderDiscount(0);
+      setOrderMode("dine_in");
+      setDeliveryAddress("");
+      if (typeof window !== "undefined" && selectedTableId) {
+        localStorage.removeItem(`chotu_pos_mode_${selectedTableId}`);
+        localStorage.removeItem(`chotu_pos_address_${selectedTableId}`);
+      }
       const refreshed = await fetchTables();
       if (Array.isArray(refreshed)) setTables(refreshed);
     } catch (err: any) {
@@ -202,12 +287,21 @@ function PosContent() {
     }
   };
 
-  const handleTransmitKot = async (customerName?: string, customerPhone?: string, orderMode?: string) => {
+  const handleApplyDiscount = async (payload: { discount_percent?: number; discount_amount?: number; promo_code?: string }) => {
+    const res = await applyTableDiscount(selectedTableId, payload);
+    const disc = Number(res?.order?.discount ?? res?.order?.discount_amount ?? 0);
+    setOrderDiscount(isNaN(disc) ? 0 : disc);
+    if (res?.items) {
+      setLedgerItems(res.items);
+    }
+  };
+
+  const handleTransmitKot = async (customerName?: string, customerPhone?: string, mode?: string, address?: string) => {
     try {
       if (customerName && customerName.trim()) {
         setLastCustomerName(customerName.trim());
       }
-      await transmitTableKot(selectedTableId, undefined, customerName, customerPhone, orderMode);
+      await transmitTableKot(selectedTableId, undefined, customerName, customerPhone, mode, address);
       showToast(`KOT successfully sent to Kitchen for ${selectedTableId}!`);
       // Refresh order to get any updated status
       const updated = await getTableOrder(selectedTableId);
@@ -218,10 +312,11 @@ function PosContent() {
   };
 
   const subtotal = ledgerItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const cgst = subtotal * (taxConfig.cgst / 100);
-  const sgst = subtotal * (taxConfig.sgst / 100);
-  const serviceCharge = subtotal * (taxConfig.serviceCharge / 100);
-  const grandTotal = Math.round(subtotal + cgst + sgst + serviceCharge);
+  const taxableSubtotal = Math.max(0, subtotal - orderDiscount);
+  const cgst = taxableSubtotal * (taxConfig.cgst / 100);
+  const sgst = taxableSubtotal * (taxConfig.sgst / 100);
+  const serviceCharge = taxableSubtotal * (taxConfig.serviceCharge / 100);
+  const grandTotal = Math.round((taxableSubtotal + cgst + sgst + serviceCharge) * 100) / 100;
 
   const handleSettleBillConfirm = async () => {
     if (ledgerItems.length === 0 || grandTotal <= 0) {
@@ -232,13 +327,14 @@ function PosContent() {
     const currentTable = tables.find((t) => t.id === selectedTableId);
     const snapshotItems = [...ledgerItems];
     const snapshotSubtotal = subtotal;
+    const snapshotDiscount = orderDiscount;
     const snapshotCgst = cgst;
     const snapshotSgst = sgst;
     const snapshotSc = serviceCharge;
     const snapshotTotal = grandTotal;
 
     try {
-      const settledRes = await settleTableBill(selectedTableId, paymentMethod);
+      const settledRes = await settleTableBill(selectedTableId, paymentMethod, orderDiscount);
       showToast(`Bill for ${currentTable?.label || selectedTableId} settled via ${paymentMethod.toUpperCase()}!`);
       const now = new Date();
       const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -251,6 +347,7 @@ function PosContent() {
         customerName: lastCustomerName || activeOrder?.customer_name || undefined,
         items: snapshotItems,
         subtotal: snapshotSubtotal,
+        discount: snapshotDiscount,
         cgst: snapshotCgst,
         sgst: snapshotSgst,
         serviceCharge: snapshotSc,
@@ -261,6 +358,13 @@ function PosContent() {
       });
       setActiveOrder(null);
       setLedgerItems([]);
+      setOrderDiscount(0);
+      setOrderMode("dine_in");
+      setDeliveryAddress("");
+      if (typeof window !== "undefined" && selectedTableId) {
+        localStorage.removeItem(`chotu_pos_mode_${selectedTableId}`);
+        localStorage.removeItem(`chotu_pos_address_${selectedTableId}`);
+      }
       setShowSettleModal(false);
       setShowPrintModal(true);
       fetchTables().then((t) => Array.isArray(t) && setTables(t)).catch(() => { });
@@ -289,6 +393,12 @@ function PosContent() {
           taxConfig={taxConfig}
           activeOrder={activeOrder}
           onCancelOrder={handleCancelOrder}
+          persistedDiscountAmount={orderDiscount}
+          onApplyDiscount={handleApplyDiscount}
+          orderMode={orderMode}
+          onChangeOrderMode={handleChangeOrderMode}
+          deliveryAddress={deliveryAddress}
+          onChangeDeliveryAddress={handleChangeDeliveryAddress}
         />
       </div>
 
@@ -437,6 +547,12 @@ function PosContent() {
                   <span>Subtotal:</span>
                   <span>₹{settledInvoice.subtotal.toFixed(2)}</span>
                 </div>
+                {settledInvoice.discount > 0 && (
+                  <div className="flex justify-between text-emerald-400">
+                    <span>Discount Applied:</span>
+                    <span>- ₹{settledInvoice.discount.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-stone-400">
                   <span>CGST ({taxConfig.cgst}%):</span>
                   <span>₹{settledInvoice.cgst.toFixed(2)}</span>
@@ -544,6 +660,12 @@ function PosContent() {
               <span>Subtotal:</span>
               <span className="font-semibold">₹{settledInvoice.subtotal.toFixed(2)}</span>
             </div>
+            {settledInvoice.discount > 0 && (
+              <div className="flex justify-between font-semibold">
+                <span>Discount Applied:</span>
+                <span>- ₹{settledInvoice.discount.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-gray-700">
               <span>CGST ({taxConfig.cgst}%):</span>
               <span>₹{settledInvoice.cgst.toFixed(2)}</span>

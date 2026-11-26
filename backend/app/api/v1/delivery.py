@@ -7,7 +7,7 @@ from app.models.user import User
 from app.models.order import Order, OrderMode, OrderStatus
 from app.schemas.delivery import (
     DeliveryOrderResponse, DispatchOrderRequest,
-    VerifyOTPRequest, VerifyOTPResponse
+    VerifyOTPRequest, VerifyOTPResponse, ManagerOverrideRequest
 )
 from app.services.delivery_service import DeliveryService
 from app.api.deps import check_permission
@@ -26,11 +26,21 @@ def get_delivery_orders(
     )
 
     if status and status.lower() != "all":
-        try:
-            target_status = OrderStatus(status.lower())
-            query = query.filter(Order.status == target_status)
-        except ValueError:
-            pass
+        s_norm = status.lower().strip()
+        alias_map = {
+            "placed": [OrderStatus.NEW],
+            "confirmed": [OrderStatus.PREPARING, OrderStatus.READY],
+            "dispatched": [OrderStatus.OUT_FOR_DELIVERY],
+            "delivered": [OrderStatus.COMPLETED],
+        }
+        if s_norm in alias_map:
+            query = query.filter(Order.status.in_(alias_map[s_norm]))
+        else:
+            try:
+                target_status = OrderStatus(s_norm)
+                query = query.filter(Order.status == target_status)
+            except ValueError:
+                pass
 
     orders = query.order_by(Order.created_at.desc()).limit(50).all()
 
@@ -61,6 +71,7 @@ def get_delivery_orders(
             aggregator_rider_status=o.aggregator_rider_status,
             has_otp=bool(o.delivery_otp_hash),
             otp_verified=bool(o.delivery_otp_verified_at),
+            otp_attempts=int(o.delivery_otp_attempts or 0),
             created_at=o.created_at
         )
         res.append(item)
@@ -100,4 +111,41 @@ def verify_delivery_handover_otp(
         message=f"Order #{order.order_number} handover verified and marked completed.",
         order_id=order.id,
         delivered_at=order.delivered_time or datetime.now(timezone.utc)
+    )
+
+@router.post("/orders/{order_id}/regenerate-otp")
+def regenerate_delivery_otp(
+    order_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_permission("delivery:override"))
+):
+    order, plain_otp = DeliveryService.regenerate_otp(
+        db, order_id, current_user.restaurant_id, current_user.id
+    )
+    return {
+        "status": "success",
+        "message": f"New delivery OTP generated for order #{order.order_number}.",
+        "order_id": order.id,
+        "delivery_otp": plain_otp,
+    }
+
+@router.post("/orders/{order_id}/manager-override", response_model=VerifyOTPResponse)
+def manager_override_delivery(
+    order_id: str,
+    req: ManagerOverrideRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_permission("delivery:override"))
+):
+    order = DeliveryService.manager_override_handover(
+        db,
+        order_id,
+        current_user.restaurant_id,
+        current_user.id,
+        req.reason or "Manager verified customer handover manually",
+    )
+    return VerifyOTPResponse(
+        status="verified",
+        message=f"Order #{order.order_number} completed via Manager Override.",
+        order_id=order.id,
+        delivered_at=order.delivered_time or datetime.now(timezone.utc),
     )

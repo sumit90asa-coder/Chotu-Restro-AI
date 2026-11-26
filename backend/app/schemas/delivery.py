@@ -12,6 +12,9 @@ class DispatchOrderRequest(BaseModel):
 class VerifyOTPRequest(BaseModel):
     otp: str
 
+class ManagerOverrideRequest(BaseModel):
+    reason: Optional[str] = "Manager verified customer handover manually"
+
 class VerifyOTPResponse(BaseModel):
     status: str
     message: str
@@ -40,6 +43,7 @@ class DeliveryOrderResponse(BaseModel):
     aggregator_rider_status: Optional[str] = None
     has_otp: bool = False
     otp_verified: bool = False
+    otp_attempts: int = 0
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

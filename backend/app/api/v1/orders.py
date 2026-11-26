@@ -1,9 +1,10 @@
 from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, not_
 from sqlalchemy.orm import Session
 from app.database.session import get_db
-from app.models.order import Order, OrderStatus
+from app.models.order import Order, OrderStatus, PlacedBy
 from app.models.kot import KOT, KOTStatus
 from app.schemas.order import OrderResponse, OrderStatusUpdate
 from app.api.deps import get_current_user
@@ -20,7 +21,11 @@ def get_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = db.query(Order).filter(Order.restaurant_id == current_user.restaurant_id)
+    query = db.query(Order).filter(
+        Order.restaurant_id == current_user.restaurant_id,
+        Order.items.any(),
+        not_(and_(Order.placed_by == PlacedBy.POS, Order.status == OrderStatus.NEW, ~Order.kots.any())),
+    )
     if status_filter == "active":
         query = query.filter(Order.status != OrderStatus.COMPLETED, Order.status != OrderStatus.CANCELLED)
     elif status_filter == "completed":

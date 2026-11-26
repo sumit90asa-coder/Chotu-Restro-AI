@@ -61,7 +61,9 @@ export async function fetchLiveOrders(status?: string, mode?: string): Promise<L
   const qs = params.toString() ? `?${params.toString()}` : "";
   
   const data = await apiFetch<BackendOrderRecord[]>(`/orders${qs}`);
-  return data.map(mapBackendOrderToLiveOrder);
+  return data
+    .filter((ord) => Boolean(ord.items_summary) || (Array.isArray(ord.items) && ord.items.length > 0))
+    .map(mapBackendOrderToLiveOrder);
 }
 
 export async function updateOrderStatus(orderId: string, status: string): Promise<LiveOrder> {

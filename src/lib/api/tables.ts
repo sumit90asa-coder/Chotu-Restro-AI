@@ -12,6 +12,7 @@ export interface BackendTable {
   current_bill: number | string;
   current_order_id?: string;
   active_order_id?: string;
+  assigned_waiter_id?: string;
   captain_name?: string;
   opened_at?: string;
   qr_token?: string;
@@ -27,7 +28,8 @@ export function mapBackendTable(t: BackendTable): Table {
     capacity: t.capacity,
     status: t.status,
     currentBill: Number(t.current_bill || 0),
-    captainName: t.captain_name || (t.status === "occupied" ? "Captain Assigned" : undefined),
+    captainName: t.captain_name || undefined,
+    assignedWaiterId: t.assigned_waiter_id || undefined,
     openedAt: t.opened_at,
     qrToken: t.qr_token,
     currentOrderId: t.current_order_id || t.active_order_id,

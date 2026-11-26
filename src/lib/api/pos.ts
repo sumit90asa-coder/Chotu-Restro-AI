@@ -19,13 +19,15 @@ export interface BackendOrder {
   table_id?: string;
   customer_name?: string;
   customer_phone?: string;
+  delivery_address?: string;
   mode: string;
   status: string;
   subtotal: number | string;
   cgst: number | string;
   sgst: number | string;
   service_charge: number | string;
-  discount_amount: number | string;
+  discount?: number | string;
+  discount_amount?: number | string;
   total_amount: number | string;
   placed_by: string;
   items: BackendOrderItem[];
@@ -127,7 +129,8 @@ export async function transmitTableKot(
   notes?: string,
   customerName?: string,
   customerPhone?: string,
-  orderMode?: string
+  orderMode?: string,
+  deliveryAddress?: string
 ): Promise<any> {
   return await apiFetch(`/pos/tables/${tableId}/fire-kot`, {
     method: "POST",
@@ -136,8 +139,38 @@ export async function transmitTableKot(
       customer_name: customerName,
       customer_phone: customerPhone,
       mode: orderMode,
+      delivery_address: deliveryAddress,
     }),
   });
+}
+
+export async function updateTableOrderMode(
+  tableId: string,
+  mode: "dine_in" | "takeaway" | "delivery",
+  deliveryAddress?: string
+): Promise<{ order: BackendOrder; items: OrderItem[] }> {
+  const normalizedMode = mode.replace("_", "-");
+  const order = await apiFetch<BackendOrder>(`/pos/tables/${tableId}/order/mode`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      mode: normalizedMode,
+      ...(deliveryAddress !== undefined ? { delivery_address: deliveryAddress } : {}),
+    }),
+  });
+  const items = (order.items || []).map(mapBackendOrderItem);
+  return { order, items };
+}
+
+export async function applyTableDiscount(
+  tableId: string,
+  payload: { discount_percent?: number; discount_amount?: number; promo_code?: string }
+): Promise<{ order: BackendOrder; items: OrderItem[] }> {
+  const order = await apiFetch<BackendOrder>(`/pos/tables/${tableId}/order/discount`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const items = (order.items || []).map(mapBackendOrderItem);
+  return { order, items };
 }
 
 export async function settleTableBill(

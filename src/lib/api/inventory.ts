@@ -41,20 +41,30 @@ export interface StockTransactionData {
   created_at: string;
 }
 
-export async function fetchIngredients(): Promise<IngredientStock[]> {
-  const data = await apiFetch<any[]>("/inventory/ingredients");
-  return data.map((item) => ({
+function mapIngredientStock(item: any): IngredientStock {
+  const stock = Number(item.current_stock);
+  const threshold = Number(item.reorder_threshold ?? item.min_reorder_level ?? 5);
+  const isLow = Boolean(item.is_low_stock);
+  const status: IngredientStock["status"] =
+    stock <= 0 ? "Out of Stock" : isLow ? "Low Stock" : "In Stock";
+
+  return {
     id: item.id,
     name: item.name,
     unit: item.unit,
-    current_stock: Number(item.current_stock),
-    reorder_threshold: Number(item.reorder_threshold),
-    min_reorder_level: Number(item.reorder_threshold ?? item.min_reorder_level ?? 5),
+    current_stock: stock,
+    reorder_threshold: threshold,
+    min_reorder_level: threshold,
     cost_per_unit: Number(item.cost_per_unit),
-    is_low_stock: Boolean(item.is_low_stock),
+    is_low_stock: isLow,
     supplier_name: item.supplier_name,
-    status: item.is_low_stock ? "Low Stock" : Number(item.current_stock) <= 0 ? "Out of Stock" : "In Stock",
-  }));
+    status,
+  };
+}
+
+export async function fetchIngredients(): Promise<IngredientStock[]> {
+  const data = await apiFetch<any[]>("/inventory/ingredients");
+  return data.map(mapIngredientStock);
 }
 
 export async function createIngredient(
@@ -64,18 +74,7 @@ export async function createIngredient(
     method: "POST",
     body: JSON.stringify(payload),
   });
-  return {
-    id: item.id,
-    name: item.name,
-    unit: item.unit,
-    current_stock: Number(item.current_stock),
-    reorder_threshold: Number(item.reorder_threshold),
-    min_reorder_level: Number(item.reorder_threshold ?? 5),
-    cost_per_unit: Number(item.cost_per_unit),
-    is_low_stock: Boolean(item.is_low_stock),
-    supplier_name: item.supplier_name,
-    status: item.is_low_stock ? "Low Stock" : Number(item.current_stock) <= 0 ? "Out of Stock" : "In Stock",
-  };
+  return mapIngredientStock(item);
 }
 
 export async function updateIngredient(
@@ -86,18 +85,7 @@ export async function updateIngredient(
     method: "PUT",
     body: JSON.stringify(payload),
   });
-  return {
-    id: item.id,
-    name: item.name,
-    unit: item.unit,
-    current_stock: Number(item.current_stock),
-    reorder_threshold: Number(item.reorder_threshold),
-    min_reorder_level: Number(item.reorder_threshold ?? 5),
-    cost_per_unit: Number(item.cost_per_unit),
-    is_low_stock: Boolean(item.is_low_stock),
-    supplier_name: item.supplier_name,
-    status: item.is_low_stock ? "Low Stock" : Number(item.current_stock) <= 0 ? "Out of Stock" : "In Stock",
-  };
+  return mapIngredientStock(item);
 }
 
 export async function deleteIngredient(ingredientId: string): Promise<boolean> {
@@ -130,10 +118,11 @@ export async function adjustIngredientStock(
     transaction_type: payload.transaction_type || "adjustment",
     notes: payload.notes || payload.reason || "Stock update via Inventory Hub",
   };
-  return await apiFetch<IngredientStock>(`/inventory/ingredients/${ingredientId}/adjust`, {
+  const item = await apiFetch<any>(`/inventory/ingredients/${ingredientId}/adjust`, {
     method: "POST",
     body: JSON.stringify(body),
   });
+  return mapIngredientStock(item);
 }
 
 export async function fetchStockAlerts(): Promise<any[]> {
@@ -165,7 +154,8 @@ export async function fetchDishRecipes(menuItemId: string): Promise<DishRecipeIt
 export async function linkRecipeIngredient(
   menuItemId: string,
   ingredientId: string,
-  quantityRequired: number
+  quantityRequired: number,
+  unit?: string
 ): Promise<any> {
   return await apiFetch("/inventory/recipes/link", {
     method: "POST",
@@ -173,6 +163,7 @@ export async function linkRecipeIngredient(
       menu_item_id: menuItemId,
       ingredient_id: ingredientId,
       quantity_required: quantityRequired,
+      ...(unit ? { unit } : {}),
     }),
   });
 }

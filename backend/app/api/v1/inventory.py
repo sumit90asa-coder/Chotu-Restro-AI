@@ -188,28 +188,72 @@ def get_inventory_alerts(
 ):
     return InventoryService.get_low_stock_alerts(db, current_user.restaurant_id)
 
+_METRIC_WEIGHT_FACTORS = {
+    "mg": Decimal("0.000001"),
+    "g": Decimal("0.001"),
+    "kg": Decimal("1"),
+}
+
+_METRIC_VOLUME_FACTORS = {
+    "ml": Decimal("0.001"),
+    "l": Decimal("1"),
+}
+
+def _convert_recipe_quantity(quantity: Decimal, from_unit: Optional[str], to_unit: str) -> Decimal:
+    """Convert a recipe serving quantity from a metric unit into the ingredient's stock unit."""
+    target = (to_unit or "").strip().lower()
+    source = (from_unit or target).strip().lower()
+    if not source or source == target:
+        return quantity.quantize(Decimal("0.001"))
+
+    if source in _METRIC_WEIGHT_FACTORS and target in _METRIC_WEIGHT_FACTORS:
+        converted = (quantity * _METRIC_WEIGHT_FACTORS[source] / _METRIC_WEIGHT_FACTORS[target]).quantize(Decimal("0.001"))
+    elif source in _METRIC_VOLUME_FACTORS and target in _METRIC_VOLUME_FACTORS:
+        converted = (quantity * _METRIC_VOLUME_FACTORS[source] / _METRIC_VOLUME_FACTORS[target]).quantize(Decimal("0.001"))
+    else:
+        raise ValueError(f"Unit '{from_unit}' is incompatible with ingredient stock unit '{to_unit}'.")
+
+    if converted <= Decimal("0.000"):
+        raise ValueError(f"Converted quantity is too small for stock unit '{to_unit}' (minimum 0.001 {to_unit}).")
+    return converted
+
 @router.post("/recipes/link")
 def link_recipe_ingredient(
     link: RecipeLink,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    ingredient = db.query(Ingredient).filter(
+        Ingredient.id == link.ingredient_id,
+        Ingredient.restaurant_id == current_user.restaurant_id
+    ).first()
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+
+    if link.quantity_required <= Decimal("0"):
+        raise HTTPException(status_code=400, detail="Quantity per serving must be greater than zero.")
+
+    try:
+        normalized_qty = _convert_recipe_quantity(link.quantity_required, link.unit, ingredient.unit)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     existing = db.query(RecipeItem).filter(
         RecipeItem.menu_item_id == link.menu_item_id,
         RecipeItem.ingredient_id == link.ingredient_id
     ).first()
     if existing:
-        existing.quantity_required = link.quantity_required
+        existing.quantity_required = normalized_qty
     else:
         new_recipe = RecipeItem(
             id=f"rec-{uuid.uuid4().hex[:8]}",
             menu_item_id=link.menu_item_id,
             ingredient_id=link.ingredient_id,
-            quantity_required=link.quantity_required
+            quantity_required=normalized_qty
         )
         db.add(new_recipe)
     db.commit()
-    return {"status": "success", "message": "Recipe ingredient linked"}
+    return {"status": "success", "message": "Recipe ingredient linked", "quantity_required": float(normalized_qty), "unit": ingredient.unit}
 
 @router.get("/recipes/{menu_item_id}")
 def get_dish_recipes(

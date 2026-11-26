@@ -164,7 +164,10 @@ async def update_table_status(
         if not table.opened_at:
             table.opened_at = datetime.now(timezone.utc).strftime("%H:%M")
         if status_update.captain_name is not None:
-            table.captain_name = status_update.captain_name
+            clean_cap = status_update.captain_name.strip()
+            table.captain_name = clean_cap or None
+            if not clean_cap:
+                table.assigned_waiter_id = None
         # Establish authoritative active order relationship immediately
         if not table.current_order_id:
             active_order = OrderService.get_or_create_table_order(
@@ -174,7 +177,10 @@ async def update_table_status(
             )
             table.current_order_id = active_order.id
     elif status_update.captain_name is not None:
-        table.captain_name = status_update.captain_name
+        clean_cap = status_update.captain_name.strip()
+        table.captain_name = clean_cap or None
+        if not clean_cap:
+            table.assigned_waiter_id = None
 
     db.commit()
     db.refresh(table)
@@ -232,12 +238,17 @@ async def assign_table_waiter(
         table.captain_name = waiter.full_name
     else:
         table.assigned_waiter_id = None
+        table.captain_name = None
 
     db.commit()
     db.refresh(table)
     await ws_manager.broadcast_to_restaurant(
         current_user.restaurant_id,
-        create_ws_message(WSEventType.TABLE_UPDATED, {"table_id": table_id, "assigned_waiter_id": table.assigned_waiter_id})
+        create_ws_message(WSEventType.TABLE_UPDATED, {
+            "table_id": table_id,
+            "assigned_waiter_id": table.assigned_waiter_id,
+            "captain_name": table.captain_name,
+        })
     )
     return table
 

@@ -76,9 +76,11 @@ export default function SettingsPage() {
         address: settings.address || undefined,
         gstin: settings.gstin || undefined,
         fssai_number: settings.fssai_number || undefined,
-        cgst_rate: settings.cgst_rate,
-        sgst_rate: settings.sgst_rate,
-        service_charge_rate: settings.service_charge_rate,
+        cgst_percent: settings.cgst_rate ?? Number(settings.cgst_percent ?? 2.5),
+        sgst_percent: settings.sgst_rate ?? Number(settings.sgst_percent ?? 2.5),
+        service_charge_percent: settings.service_charge_enabled
+          ? (settings.service_charge_rate ?? Number(settings.service_charge_percent ?? 5.0))
+          : 0,
         service_charge_enabled: settings.service_charge_enabled,
         currency: settings.currency,
         upi_vpa: settings.upi_vpa || undefined,
@@ -215,8 +217,9 @@ export default function SettingsPage() {
                 <input
                   type="number"
                   step="0.1"
-                  value={settings.cgst_rate}
-                  onChange={(e) => setSettings({ ...settings, cgst_rate: Number(e.target.value) })}
+                  min="0"
+                  value={settings.cgst_rate ?? 0}
+                  onChange={(e) => setSettings({ ...settings, cgst_rate: Number(e.target.value), cgst_percent: Number(e.target.value) })}
                   className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs font-mono focus:outline-none focus:border-[#E07A5F]"
                 />
               </div>
@@ -226,8 +229,9 @@ export default function SettingsPage() {
                 <input
                   type="number"
                   step="0.1"
-                  value={settings.sgst_rate}
-                  onChange={(e) => setSettings({ ...settings, sgst_rate: Number(e.target.value) })}
+                  min="0"
+                  value={settings.sgst_rate ?? 0}
+                  onChange={(e) => setSettings({ ...settings, sgst_rate: Number(e.target.value), sgst_percent: Number(e.target.value) })}
                   className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs font-mono focus:outline-none focus:border-[#E07A5F]"
                 />
               </div>
@@ -237,9 +241,11 @@ export default function SettingsPage() {
                 <input
                   type="number"
                   step="0.1"
-                  value={settings.service_charge_rate}
-                  onChange={(e) => setSettings({ ...settings, service_charge_rate: Number(e.target.value) })}
-                  className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs font-mono focus:outline-none focus:border-[#E07A5F]"
+                  min="0"
+                  disabled={!settings.service_charge_enabled}
+                  value={settings.service_charge_enabled ? (settings.service_charge_rate ?? 0) : 0}
+                  onChange={(e) => setSettings({ ...settings, service_charge_rate: Number(e.target.value), service_charge_percent: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs font-mono focus:outline-none focus:border-[#E07A5F] disabled:opacity-50"
                 />
               </div>
 
@@ -247,8 +253,16 @@ export default function SettingsPage() {
                 <input
                   type="checkbox"
                   id="sc-toggle"
-                  checked={settings.service_charge_enabled}
-                  onChange={(e) => setSettings({ ...settings, service_charge_enabled: e.target.checked })}
+                  checked={Boolean(settings.service_charge_enabled)}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    setSettings({
+                      ...settings,
+                      service_charge_enabled: enabled,
+                      service_charge_rate: enabled ? (settings.service_charge_rate || 5.0) : 0,
+                      service_charge_percent: enabled ? (settings.service_charge_rate || 5.0) : 0,
+                    });
+                  }}
                   className="w-4 h-4 rounded text-[#E07A5F] bg-stone-900 border-stone-700 focus:ring-0"
                 />
                 <label htmlFor="sc-toggle" className="text-xs text-stone-300 font-medium cursor-pointer">

@@ -74,3 +74,4 @@ class RecipeLink(BaseModel):
     menu_item_id: str
     ingredient_id: str
     quantity_required: Decimal
+    unit: Optional[str] = None

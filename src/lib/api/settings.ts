@@ -33,6 +33,9 @@ export interface RestaurantSettingsUpdate {
   phone?: string;
   email?: string;
   tax_rate?: number;
+  cgst_percent?: number;
+  sgst_percent?: number;
+  service_charge_percent?: number;
   cgst_rate?: number;
   sgst_rate?: number;
   service_charge_rate?: number;
@@ -49,8 +52,25 @@ export interface RestaurantSettingsUpdate {
   timezone?: string;
 }
 
+function mapSettingsResponse(raw: any): RestaurantSettingsData {
+  const cgst = Number(raw?.cgst_percent ?? raw?.cgst_rate ?? 2.5);
+  const sgst = Number(raw?.sgst_percent ?? raw?.sgst_rate ?? 2.5);
+  const sc = Number(raw?.service_charge_percent ?? raw?.service_charge_rate ?? 5.0);
+  return {
+    ...raw,
+    cgst_percent: cgst,
+    sgst_percent: sgst,
+    service_charge_percent: sc,
+    cgst_rate: cgst,
+    sgst_rate: sgst,
+    service_charge_rate: sc,
+    service_charge_enabled: raw?.service_charge_enabled ?? sc > 0,
+  };
+}
+
 export async function fetchSettings(): Promise<RestaurantSettingsData> {
-  return apiFetch<RestaurantSettingsData>("/settings");
+  const raw = await apiFetch<any>("/settings");
+  return mapSettingsResponse(raw);
 }
 
 export const fetchRestaurantSettings = fetchSettings;
@@ -58,8 +78,33 @@ export const fetchRestaurantSettings = fetchSettings;
 export async function updateSettings(
   data: RestaurantSettingsUpdate
 ): Promise<RestaurantSettingsData> {
-  return apiFetch<RestaurantSettingsData>("/settings", {
+  const cgstVal = data.cgst_percent ?? data.cgst_rate;
+  const sgstVal = data.sgst_percent ?? data.sgst_rate;
+  const scVal =
+    data.service_charge_enabled === false
+      ? 0
+      : (data.service_charge_percent ?? data.service_charge_rate);
+
+  const payload: Record<string, any> = {
+    name: data.name,
+    address: data.address,
+    phone: data.phone,
+    tagline: data.tagline,
+    gstin: data.gstin,
+    fssai_number: data.fssai_number,
+    currency: data.currency,
+    upi_vpa: data.upi_vpa,
+    auto_print_kot: data.auto_print_kot,
+    invoice_prefix: data.invoice_prefix,
+    timezone: data.timezone,
+  };
+  if (cgstVal !== undefined) payload.cgst_percent = cgstVal;
+  if (sgstVal !== undefined) payload.sgst_percent = sgstVal;
+  if (scVal !== undefined) payload.service_charge_percent = scVal;
+
+  const raw = await apiFetch<any>("/settings", {
     method: "PATCH",
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
+  return mapSettingsResponse(raw);
 }

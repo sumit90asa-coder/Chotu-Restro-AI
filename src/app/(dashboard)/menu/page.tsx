@@ -62,7 +62,60 @@ export default function MenuManagementPage() {
   const [allIngredients, setAllIngredients] = useState<IngredientStock[]>([]);
   const [selectedIngredientId, setSelectedIngredientId] = useState<string>("");
   const [recipeQuantity, setRecipeQuantity] = useState<string>("0.100");
+  const [recipeUnit, setRecipeUnit] = useState<string>("kg");
   const [isLinkingRecipe, setIsLinkingRecipe] = useState<boolean>(false);
+
+  const WEIGHT_FACTORS: Record<string, number> = { mg: 0.000001, g: 0.001, kg: 1 };
+  const VOLUME_FACTORS: Record<string, number> = { ml: 0.001, l: 1 };
+
+  const getCompatibleMetricUnits = (stockUnit?: string): { value: string; label: string }[] => {
+    const u = (stockUnit || "kg").toLowerCase().trim();
+    if (u in WEIGHT_FACTORS) {
+      return [
+        { value: "g", label: "g (Grams)" },
+        { value: "kg", label: "kg (Kilograms)" },
+        { value: "mg", label: "mg (Milligrams)" },
+      ];
+    }
+    if (u in VOLUME_FACTORS) {
+      return [
+        { value: "ml", label: "ml (Millilitres)" },
+        { value: "l", label: "l (Litres)" },
+      ];
+    }
+    return [{ value: u, label: u }];
+  };
+
+  const getDefaultRecipeUnit = (stockUnit?: string): string => {
+    const u = (stockUnit || "kg").toLowerCase().trim();
+    if (u === "kg") return "g";
+    if (u === "l") return "ml";
+    return u;
+  };
+
+  const convertToStockUnit = (qty: number, fromUnit: string, toUnit: string): number | null => {
+    const src = fromUnit.toLowerCase().trim();
+    const dst = toUnit.toLowerCase().trim();
+    if (src === dst) return qty;
+    if (src in WEIGHT_FACTORS && dst in WEIGHT_FACTORS) {
+      return (qty * WEIGHT_FACTORS[src]) / WEIGHT_FACTORS[dst];
+    }
+    if (src in VOLUME_FACTORS && dst in VOLUME_FACTORS) {
+      return (qty * VOLUME_FACTORS[src]) / VOLUME_FACTORS[dst];
+    }
+    return null;
+  };
+
+  const formatRecipeServingQty = (qty: number, stockUnit: string): string => {
+    const u = stockUnit.toLowerCase().trim();
+    if (u === "kg" && qty > 0 && qty < 1) {
+      return `${Math.round(qty * 1000 * 1000) / 1000} g (${qty} kg)`;
+    }
+    if (u === "l" && qty > 0 && qty < 1) {
+      return `${Math.round(qty * 1000 * 1000) / 1000} ml (${qty} l)`;
+    }
+    return `${qty} ${stockUnit}`;
+  };
 
   const openRecipeModal = async (dish: MenuItem) => {
     setRecipeModalDish(dish);
@@ -75,6 +128,9 @@ export default function MenuManagementPage() {
       setAllIngredients(ings);
       if (ings.length > 0) {
         setSelectedIngredientId(ings[0].id);
+        const defUnit = getDefaultRecipeUnit(ings[0].unit);
+        setRecipeUnit(defUnit);
+        setRecipeQuantity(defUnit === "g" || defUnit === "ml" ? "100" : "1");
       }
     } catch {
       showToast("Error loading recipe data");
@@ -91,11 +147,11 @@ export default function MenuManagementPage() {
     }
     setIsLinkingRecipe(true);
     try {
-      await linkRecipeIngredient(recipeModalDish.id, selectedIngredientId, qty);
+      await linkRecipeIngredient(recipeModalDish.id, selectedIngredientId, qty, recipeUnit);
       showToast("Raw ingredient linked to recipe!");
       const updated = await fetchDishRecipes(recipeModalDish.id);
       setDishRecipes(updated);
-      setRecipeQuantity("0.100");
+      setRecipeQuantity(recipeUnit === "g" || recipeUnit === "ml" ? "100" : "1");
     } catch (err: any) {
       showToast(err.message || "Failed to link ingredient");
     } finally {
@@ -667,7 +723,7 @@ export default function MenuManagementPage() {
                         <Package className="w-3.5 h-3.5 text-amber-400" />
                         <span className="font-semibold text-white">{r.ingredient_name}</span>
                         <span className="text-stone-400 font-mono">
-                          ({r.quantity_required} {r.unit} / serving)
+                          ({formatRecipeServingQty(r.quantity_required, r.unit)} / serving)
                         </span>
                       </div>
                       <button
@@ -692,7 +748,16 @@ export default function MenuManagementPage() {
                   <label className="block text-[11px] text-stone-400 mb-1">Select Ingredient</label>
                   <select
                     value={selectedIngredientId}
-                    onChange={(e) => setSelectedIngredientId(e.target.value)}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      setSelectedIngredientId(nextId);
+                      const ing = allIngredients.find((i) => i.id === nextId);
+                      if (ing) {
+                        const defUnit = getDefaultRecipeUnit(ing.unit);
+                        setRecipeUnit(defUnit);
+                        setRecipeQuantity(defUnit === "g" || defUnit === "ml" ? "100" : "1");
+                      }
+                    }}
                     className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs focus:outline-none focus:border-[#E07A5F]"
                   >
                     {allIngredients.map((ing) => (
@@ -704,16 +769,48 @@ export default function MenuManagementPage() {
                 </div>
                 <div>
                   <label className="block text-[11px] text-stone-400 mb-1">Quantity per Serving</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0.001"
-                    required
-                    value={recipeQuantity}
-                    onChange={(e) => setRecipeQuantity(e.target.value)}
-                    placeholder="e.g. 0.200"
-                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs font-mono focus:outline-none focus:border-[#E07A5F]"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.001"
+                      required
+                      value={recipeQuantity}
+                      onChange={(e) => setRecipeQuantity(e.target.value)}
+                      placeholder={recipeUnit === "g" || recipeUnit === "ml" ? "e.g. 250" : "e.g. 0.250"}
+                      className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs font-mono focus:outline-none focus:border-[#E07A5F]"
+                    />
+                    <select
+                      aria-label="Unit of measurement"
+                      value={recipeUnit}
+                      onChange={(e) => setRecipeUnit(e.target.value)}
+                      className="w-32 shrink-0 px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs font-mono focus:outline-none focus:border-[#E07A5F]"
+                    >
+                      {(() => {
+                        const selectedIng = allIngredients.find((i) => i.id === selectedIngredientId);
+                        return getCompatibleMetricUnits(selectedIng?.unit).map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
+                  {(() => {
+                    const selectedIng = allIngredients.find((i) => i.id === selectedIngredientId);
+                    const parsedQty = parseFloat(recipeQuantity);
+                    if (selectedIng && !isNaN(parsedQty) && parsedQty > 0 && recipeUnit.toLowerCase() !== selectedIng.unit.toLowerCase()) {
+                      const converted = convertToStockUnit(parsedQty, recipeUnit, selectedIng.unit);
+                      if (converted !== null) {
+                        return (
+                          <p className="mt-1 text-[10px] font-mono text-stone-400">
+                            = {Number(converted.toFixed(3))} {selectedIng.unit} deducted from stock per serving
+                          </p>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
                 </div>
               </div>
               <div className="flex justify-end pt-1">

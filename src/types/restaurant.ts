@@ -25,6 +25,7 @@ export interface Table {
   currentBill?: number;
   guestCount?: number;
   captainName?: string;
+  assignedWaiterId?: string;
   openedAt?: string;
   qrToken?: string;
   currentOrderId?: string;

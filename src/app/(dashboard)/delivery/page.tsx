@@ -6,9 +6,12 @@ import { Modal } from "@/components/ui/Modal";
 import { 
   fetchDeliveryOrders, 
   dispatchDeliveryOrder, 
-  verifyDeliveryOTP, 
+  verifyDeliveryOTP,
+  regenerateDeliveryOTP,
+  managerOverrideDelivery,
   DeliveryOrderData 
 } from "@/lib/api/delivery";
+import { useAuth } from "@/lib/context/AuthContext";
 import { 
   Bike, 
   MapPin, 
@@ -24,6 +27,8 @@ import {
 } from "lucide-react";
 
 export default function DeliveryPage() {
+  const { user } = useAuth();
+  const isManagerOrOwner = user?.role === "owner" || user?.role === "manager";
   const [orders, setOrders] = useState<DeliveryOrderData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -42,6 +47,9 @@ export default function DeliveryPage() {
   const [verifyModal, setVerifyModal] = useState<boolean>(false);
   const [verifyOtpInput, setVerifyOtpInput] = useState<string>("");
   const [verifying, setVerifying] = useState<boolean>(false);
+  const [managerOtpPreview, setManagerOtpPreview] = useState<string | null>(null);
+  const [regeneratingOtp, setRegeneratingOtp] = useState<boolean>(false);
+  const [overriding, setOverriding] = useState<boolean>(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -89,7 +97,7 @@ export default function DeliveryPage() {
     try {
       setVerifying(true);
       const res = await verifyDeliveryOTP(selectedOrder.id, verifyOtpInput.trim());
-      if (res.verified) {
+      if (res.verified || res.status === "verified") {
         showToast(`Delivery handover verified! Order #${selectedOrder.order_number} marked Delivered.`);
         setVerifyModal(false);
         setVerifyOtpInput("");
@@ -98,8 +106,45 @@ export default function DeliveryPage() {
       }
     } catch (err: any) {
       showToast(err.message || "Invalid OTP code or max attempts exceeded");
+      await loadOrders(statusFilter);
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const handleManagerRegenerateOTP = async () => {
+    if (!selectedOrder) return;
+    try {
+      setRegeneratingOtp(true);
+      const res = await regenerateDeliveryOTP(selectedOrder.id);
+      setManagerOtpPreview(res.delivery_otp);
+      setVerifyOtpInput("");
+      showToast(`New OTP generated for #${selectedOrder.order_number} (lockout cleared).`);
+      await loadOrders(statusFilter);
+    } catch (err: any) {
+      showToast(err.message || "Failed to regenerate OTP");
+    } finally {
+      setRegeneratingOtp(false);
+    }
+  };
+
+  const handleManagerOverride = async () => {
+    if (!selectedOrder) return;
+    try {
+      setOverriding(true);
+      const res = await managerOverrideDelivery(selectedOrder.id, "Manager verified handover after OTP failure");
+      if (res.verified || res.status === "verified") {
+        showToast(`Order #${selectedOrder.order_number} marked Delivered via Manager Override.`);
+        setVerifyModal(false);
+        setVerifyOtpInput("");
+        setManagerOtpPreview(null);
+        setSelectedOrder(null);
+        await loadOrders(statusFilter);
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to override delivery");
+    } finally {
+      setOverriding(false);
     }
   };
 
@@ -169,18 +214,25 @@ export default function DeliveryPage() {
       </div>
 
       {/* Orders Filter Tabs */}
-      <div className="flex items-center gap-2 p-2 rounded-xl bg-[#181514] border border-stone-800">
-        {["all", "placed", "confirmed", "dispatched", "delivered"].map((st) => (
+      <div className="flex flex-wrap items-center gap-2 p-2 rounded-xl bg-[#181514] border border-stone-800">
+        {[
+          { value: "all", label: "All" },
+          { value: "new", label: "New" },
+          { value: "preparing", label: "Preparing" },
+          { value: "ready", label: "Ready" },
+          { value: "out-for-delivery", label: "Out for Delivery" },
+          { value: "completed", label: "Delivered" },
+        ].map((tab) => (
           <button
-            key={st}
-            onClick={() => setStatusFilter(st)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors cursor-pointer ${
-              statusFilter === st
+            key={tab.value}
+            onClick={() => setStatusFilter(tab.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              statusFilter === tab.value
                 ? "bg-[#E07A5F]/20 text-[#F4A261] border border-[#E07A5F]/40 font-bold"
                 : "text-stone-400 hover:text-white"
             }`}
           >
-            {st}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -211,14 +263,14 @@ export default function DeliveryPage() {
                   </div>
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase font-mono border ${
-                      ord.status === "dispatched"
+                      ord.status === "out-for-delivery"
                         ? "bg-blue-500/20 text-blue-300 border-blue-500/40"
-                        : ord.status === "delivered"
+                        : ord.status === "completed"
                         ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                         : "bg-amber-500/20 text-amber-300 border-amber-500/40"
                     }`}
                   >
-                    {ord.status}
+                    {ord.status.replace(/-/g, " ")}
                   </span>
                 </div>
 
@@ -261,7 +313,7 @@ export default function DeliveryPage() {
 
               {/* Status Action Buttons */}
               <div className="flex items-center gap-2 pt-3 border-t border-stone-800">
-                {(ord.status === "placed" || ord.status === "confirmed") && (
+                {(ord.status === "new" || ord.status === "preparing" || ord.status === "ready") && (
                   <button
                     onClick={() => {
                       setSelectedOrder(ord);
@@ -275,21 +327,22 @@ export default function DeliveryPage() {
                   </button>
                 )}
 
-                {ord.status === "dispatched" && (
+                {ord.status === "out-for-delivery" && (
                   <button
                     onClick={() => {
                       setSelectedOrder(ord);
                       setVerifyOtpInput("");
+                      setManagerOtpPreview(null);
                       setVerifyModal(true);
                     }}
                     className="flex-1 py-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <KeyRound className="w-3.5 h-3.5" />
-                    <span>Verify Customer OTP</span>
+                    <span>{ord.otp_attempts >= 3 ? "OTP Locked — Manage" : "Verify Customer OTP"}</span>
                   </button>
                 )}
 
-                {ord.status === "delivered" && (
+                {ord.status === "completed" && (
                   <div className="flex-1 py-1.5 text-center text-xs text-stone-500 font-medium flex items-center justify-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                     <span>Delivered & Settled</span>
@@ -377,9 +430,12 @@ export default function DeliveryPage() {
       {selectedOrder && (
         <Modal
           isOpen={verifyModal}
-          onClose={() => setVerifyModal(false)}
+          onClose={() => {
+            setVerifyModal(false);
+            setManagerOtpPreview(null);
+          }}
           title={`Verify Handover: #${selectedOrder.order_number}`}
-          description={`Enter the 6-digit OTP provided by ${selectedOrder.customer_name}`}
+          description={`Enter the 4-digit OTP provided by ${selectedOrder.customer_name}`}
           maxWidth="sm"
         >
           <div className="space-y-4">
@@ -390,17 +446,64 @@ export default function DeliveryPage() {
                 maxLength={6}
                 value={verifyOtpInput}
                 onChange={(e) => setVerifyOtpInput(e.target.value)}
-                placeholder="6-digit code"
+                placeholder="4-digit code"
                 className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-lg font-mono tracking-widest text-center focus:outline-none focus:border-[#E07A5F]"
               />
               <p className="text-[11px] text-stone-500 mt-1">
-                Verified using constant-time comparison against salted SHA-256 hash. Max 3 attempts.
+                Verified using constant-time comparison against salted SHA-256 hash. Attempts used: {selectedOrder.otp_attempts ?? 0}/3.
               </p>
             </div>
 
+            {isManagerOrOwner && (
+              <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold font-mono uppercase text-amber-300 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Manager OTP Recovery
+                  </span>
+                  {selectedOrder.otp_attempts >= 3 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono">
+                      Locked
+                    </span>
+                  )}
+                </div>
+
+                {managerOtpPreview && (
+                  <div className="p-2 rounded-lg bg-stone-950 border border-stone-800 text-center">
+                    <span className="text-[10px] text-stone-400 block">New Active Customer OTP</span>
+                    <span className="text-xl font-mono font-bold tracking-widest text-[#F4A261]">
+                      {managerOtpPreview}
+                    </span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleManagerRegenerateOTP}
+                    disabled={regeneratingOtp || overriding}
+                    className="py-1.5 px-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-700 text-amber-300 text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                  >
+                    {regeneratingOtp ? "Resetting..." : "Regenerate OTP"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleManagerOverride}
+                    disabled={overriding || regeneratingOtp}
+                    className="py-1.5 px-2.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                  >
+                    {overriding ? "Completing..." : "Override & Deliver"}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-2 border-t border-stone-800">
               <button
-                onClick={() => setVerifyModal(false)}
+                onClick={() => {
+                  setVerifyModal(false);
+                  setManagerOtpPreview(null);
+                }}
                 className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 text-xs cursor-pointer"
               >
                 Cancel

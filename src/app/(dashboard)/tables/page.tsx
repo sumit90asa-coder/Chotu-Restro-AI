@@ -29,7 +29,8 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Modal } from "@/components/ui/Modal";
-import { fetchTables, updateTableStatus, transferTable, createTable, deleteTable, fetchFloors } from "@/lib/api/tables";
+import { fetchTables, updateTableStatus, transferTable, createTable, deleteTable, fetchFloors, assignTableWaiter } from "@/lib/api/tables";
+import { fetchStaff, StaffMemberData } from "@/lib/api/staff";
 import { getTableOrder, settleTableBill, cancelTableOrder } from "@/lib/api/pos";
 import { Table, TableStatus, OrderItem } from "@/types/restaurant";
 import { wsClient } from "@/lib/api/websocket";
@@ -65,6 +66,12 @@ export default function TablesPage() {
   const [showStatusModal, setShowStatusModal] = useState<boolean>(false);
   const [newStatus, setNewStatus] = useState<TableStatus>("vacant");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<boolean>(false);
+
+  // Assign Server / Waiter Modal
+  const [staffList, setStaffList] = useState<StaffMemberData[]>([]);
+  const [showWaiterModal, setShowWaiterModal] = useState<boolean>(false);
+  const [selectedWaiterId, setSelectedWaiterId] = useState<string>("");
+  const [isAssigningWaiter, setIsAssigningWaiter] = useState<boolean>(false);
 
   // Transfer Table Modal
   const [showTransferModal, setShowTransferModal] = useState<boolean>(false);
@@ -143,7 +150,13 @@ export default function TablesPage() {
   const loadTables = async () => {
     setLoading(true);
     try {
-      const data = await fetchTables();
+      const [data, staff] = await Promise.all([
+        fetchTables(),
+        fetchStaff().catch(() => []),
+      ]);
+      if (Array.isArray(staff)) {
+        setStaffList(staff.filter((s) => s.is_active));
+      }
       if (data && data.length > 0) {
         setTables(data);
         // If a table is currently selected, refresh its data in the drawer
@@ -288,7 +301,7 @@ export default function TablesPage() {
     if (!selectedTable) return;
     setIsUpdatingStatus(true);
     try {
-      await updateTableStatus(selectedTable.id, newStatus, captainInput.trim() || undefined);
+      await updateTableStatus(selectedTable.id, newStatus, captainInput.trim());
       showToast(`Table ${selectedTable.label} updated to ${newStatus.toUpperCase()}`);
       setShowStatusModal(false);
       await loadTables();
@@ -297,6 +310,32 @@ export default function TablesPage() {
       showToast("Error updating table status");
     } finally {
       setIsUpdatingStatus(false);
+    }
+  };
+
+  // Handle Manual Server / Waiter Assignment
+  const handleAssignWaiterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTable) return;
+    setIsAssigningWaiter(true);
+    try {
+      if (selectedWaiterId) {
+        await assignTableWaiter(selectedTable.id, selectedWaiterId);
+        const staffMember = staffList.find((s) => s.id === selectedWaiterId);
+        showToast(`Assigned ${staffMember?.full_name || "server"} to ${selectedTable.label}`);
+      } else if (captainInput.trim()) {
+        await updateTableStatus(selectedTable.id, selectedTable.status, captainInput.trim());
+        showToast(`Assigned ${captainInput.trim()} to ${selectedTable.label}`);
+      } else {
+        await assignTableWaiter(selectedTable.id, null);
+        showToast(`Cleared server assignment for ${selectedTable.label}`);
+      }
+      setShowWaiterModal(false);
+      await loadTables();
+    } catch (err: any) {
+      showToast(err?.message || "Failed to assign server");
+    } finally {
+      setIsAssigningWaiter(false);
     }
   };
 
@@ -866,6 +905,18 @@ export default function TablesPage() {
                   </div>
 
                   <button
+                    onClick={() => {
+                      setSelectedWaiterId(selectedTable.assignedWaiterId || "");
+                      setCaptainInput(selectedTable.captainName || "");
+                      setShowWaiterModal(true);
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-stone-900 border border-stone-700 hover:bg-stone-800 text-stone-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Users className="w-3.5 h-3.5 text-[#E07A5F]" />
+                    <span>{selectedTable.captainName ? `Server: ${selectedTable.captainName} (Change)` : "Assign Server / Waiter"}</span>
+                  </button>
+
+                  <button
                     onClick={async () => {
                       if (!confirm(`Are you sure you want to permanently delete ${selectedTable.label}?`)) return;
                       try {
@@ -1009,6 +1060,18 @@ export default function TablesPage() {
                       Update Status
                     </button>
                   </div>
+
+                  <button
+                    onClick={() => {
+                      setSelectedWaiterId(selectedTable.assignedWaiterId || "");
+                      setCaptainInput(selectedTable.captainName || "");
+                      setShowWaiterModal(true);
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-stone-900 border border-stone-700 hover:bg-stone-800 text-stone-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Users className="w-3.5 h-3.5 text-[#E07A5F]" />
+                    <span>{selectedTable.captainName ? `Server: ${selectedTable.captainName} (Change)` : "Assign Server / Waiter"}</span>
+                  </button>
 
                   <button
                     onClick={() => handleQuickClear(selectedTable.id)}
@@ -1229,6 +1292,23 @@ export default function TablesPage() {
               <label className="block text-xs font-medium text-stone-300 mb-1.5">
                 Assign Server / Captain Name
               </label>
+              {staffList.length > 0 && (
+                <select
+                  value={staffList.find((s) => s.full_name === captainInput)?.id || ""}
+                  onChange={(e) => {
+                    const member = staffList.find((s) => s.id === e.target.value);
+                    setCaptainInput(member ? member.full_name : "");
+                  }}
+                  className="w-full mb-2 px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs focus:outline-none focus:border-[#E07A5F]"
+                >
+                  <option value="">-- Select Registered Staff (or type below) --</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name} ({s.role.replace("_", " ")})
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 type="text"
                 value={captainInput}
@@ -1257,6 +1337,76 @@ export default function TablesPage() {
               </button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Assign Server / Waiter Modal */}
+      {showWaiterModal && selectedTable && (
+        <Modal
+          isOpen={showWaiterModal}
+          onClose={() => setShowWaiterModal(false)}
+          title={`Assign Server: ${selectedTable.label}`}
+          description="Select a registered staff member or enter a captain name for this table"
+        >
+          <form onSubmit={handleAssignWaiterSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-stone-300 mb-1.5">
+                Select Staff Member
+              </label>
+              <select
+                value={selectedWaiterId}
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  setSelectedWaiterId(nextId);
+                  const member = staffList.find((s) => s.id === nextId);
+                  if (member) {
+                    setCaptainInput(member.full_name);
+                  }
+                }}
+                className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs focus:outline-none focus:border-[#E07A5F]"
+              >
+                <option value="">-- Unassigned / Custom Name Below --</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name} ({s.role.replace("_", " ")})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-stone-300 mb-1.5">
+                Or Enter Custom Server / Captain Name
+              </label>
+              <input
+                type="text"
+                value={captainInput}
+                onChange={(e) => {
+                  setCaptainInput(e.target.value);
+                  setSelectedWaiterId("");
+                }}
+                placeholder="Leave blank to unassign"
+                className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs placeholder:text-stone-500 focus:outline-none focus:border-[#E07A5F]"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-800">
+              <button
+                type="button"
+                onClick={() => setShowWaiterModal(false)}
+                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isAssigningWaiter}
+                className="px-4 py-2 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs"
+              >
+                {isAssigningWaiter ? "Assigning..." : "Save Server Assignment"}
+              </button>
+            </div>
+          </form>
         </Modal>
       )}
 

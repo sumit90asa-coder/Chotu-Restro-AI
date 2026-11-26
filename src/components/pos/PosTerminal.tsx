@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { Table, MenuItem, OrderItem } from "@/types/restaurant";
 import { MENU_ITEMS } from "@/data/mockData";
@@ -27,7 +27,8 @@ import {
   MessageSquare,
   CheckCircle2,
   X,
-  AlertCircle
+  AlertCircle,
+  MapPin
 } from "lucide-react";
 
 interface PosTerminalProps {
@@ -38,13 +39,19 @@ interface PosTerminalProps {
   onAddDish: (dish: MenuItem, notes?: string) => void;
   onChangeQty: (dishId: string, delta: number) => void;
   onRemoveItem: (dishId: string) => void;
-  onTransmitKot: (customerName?: string, customerPhone?: string, orderMode?: string) => Promise<void> | void;
+  onTransmitKot: (customerName?: string, customerPhone?: string, orderMode?: string, deliveryAddress?: string) => Promise<void> | void;
   onSendWhatsApp: () => void;
   onSettleBill: () => void;
   dishes?: MenuItem[];
   taxConfig?: { cgst: number; sgst: number; serviceCharge: number };
   activeOrder?: any;
   onCancelOrder?: () => Promise<void> | void;
+  persistedDiscountAmount?: number;
+  onApplyDiscount?: (payload: { discount_percent?: number; discount_amount?: number; promo_code?: string }) => Promise<void>;
+  orderMode?: "dine_in" | "takeaway" | "delivery";
+  onChangeOrderMode?: (mode: "dine_in" | "takeaway" | "delivery") => void;
+  deliveryAddress?: string;
+  onChangeDeliveryAddress?: (addr: string) => void;
 }
 
 export const PosTerminal: React.FC<PosTerminalProps> = ({
@@ -62,6 +69,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   taxConfig,
   activeOrder,
   onCancelOrder,
+  persistedDiscountAmount = 0,
+  onApplyDiscount,
+  orderMode: controlledOrderMode,
+  onChangeOrderMode,
+  deliveryAddress: controlledDeliveryAddress,
+  onChangeDeliveryAddress,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -72,13 +85,43 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   // Customer Context State
   const [customerName, setCustomerName] = useState<string>("");
   const [customerPhone, setCustomerPhone] = useState<string>("");
-  const [orderMode, setOrderMode] = useState<"dine_in" | "takeaway" | "delivery">("dine_in");
+  const [internalOrderMode, setInternalOrderMode] = useState<"dine_in" | "takeaway" | "delivery">("dine_in");
+  const orderMode = controlledOrderMode ?? internalOrderMode;
+  const setOrderMode = (nextMode: "dine_in" | "takeaway" | "delivery") => {
+    setInternalOrderMode(nextMode);
+    if (onChangeOrderMode) {
+      onChangeOrderMode(nextMode);
+    }
+  };
+  const [internalDeliveryAddress, setInternalDeliveryAddress] = useState<string>("");
+  const deliveryAddress = controlledDeliveryAddress ?? internalDeliveryAddress;
+  const setDeliveryAddress = (addr: string) => {
+    setInternalDeliveryAddress(addr);
+    if (onChangeDeliveryAddress) {
+      onChangeDeliveryAddress(addr);
+    }
+  };
 
-  // Discount Percentage State
+  // Discount Percentage State (synced with backend Order.discount)
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [promoCodeInput, setPromoCodeInput] = useState<string>("");
   const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
   const [promoFeedback, setPromoFeedback] = useState<{ message: string; isError: boolean } | null>(null);
+
+  // Bill calculations
+  const rawSubtotal = ledgerItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+
+  // Sync persisted discount from PostgreSQL when switching tables or returning to /pos
+  useEffect(() => {
+    if (persistedDiscountAmount > 0 && rawSubtotal > 0) {
+      const pct = Math.min(100, (persistedDiscountAmount / rawSubtotal) * 100);
+      setDiscountPercent(Number(pct.toFixed(1)));
+    } else if (persistedDiscountAmount === 0) {
+      setDiscountPercent(0);
+      setAppliedPromo(null);
+      setPromoFeedback(null);
+    }
+  }, [selectedTableId, persistedDiscountAmount, rawSubtotal]);
 
   const handleApplyPromo = async () => {
     setPromoFeedback(null);
@@ -93,6 +136,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         return;
       }
 
+      if (onApplyDiscount) {
+        await onApplyDiscount({ promo_code: res.code });
+      }
+
       if (res.discount_type === "percentage") {
         setDiscountPercent(res.discount_value);
       } else {
@@ -103,48 +150,23 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       setAppliedPromo(res.code);
       setPromoFeedback({ message: res.message, isError: false });
       return;
-    } catch {
-      // Fallback to local cache if network is unreachable
-      try {
-        const stored = localStorage.getItem("chotu_coupons");
-        const coupons = stored ? JSON.parse(stored) : [];
-        const found = coupons.find((c: any) => c.code.toUpperCase() === query);
-
-        if (!found) {
-          setPromoFeedback({ message: `Code "${query}" not found`, isError: true });
-          return;
-        }
-
-        if (!found.isActive) {
-          setPromoFeedback({ message: `Promo code "${query}" is currently disabled`, isError: true });
-          return;
-        }
-
-        if (rawSubtotal < (found.minOrderValue || 0)) {
-          setPromoFeedback({ message: `Min order ₹${found.minOrderValue} required for this code`, isError: true });
-          return;
-        }
-
-        if (found.discountType === "percentage") {
-          setDiscountPercent(found.discountValue);
-        } else {
-          const pct = rawSubtotal > 0 ? Math.min(100, (found.discountValue / rawSubtotal) * 100) : 0;
-          setDiscountPercent(Number(pct.toFixed(1)));
-        }
-
-        setAppliedPromo(found.code);
-        setPromoFeedback({ message: `Applied ${found.code}!`, isError: false });
-      } catch {
-        setPromoFeedback({ message: "Could not apply promo code", isError: true });
-      }
+    } catch (err: any) {
+      setPromoFeedback({ message: err?.message || "Could not apply promo code", isError: true });
     }
   };
 
-  const handleClearPromo = () => {
+  const handleClearPromo = async () => {
     setDiscountPercent(0);
     setAppliedPromo(null);
     setPromoCodeInput("");
     setPromoFeedback(null);
+    if (onApplyDiscount) {
+      try {
+        await onApplyDiscount({ discount_percent: 0 });
+      } catch {
+        // Ignore if table has no active order yet
+      }
+    }
   };
 
   // Item Customization Note Modal
@@ -161,9 +183,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     status: "vacant",
   };
 
-  // Bill calculations
-  const rawSubtotal = ledgerItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const discountAmount = (rawSubtotal * discountPercent) / 100;
+  const discountAmount = persistedDiscountAmount > 0 ? persistedDiscountAmount : (rawSubtotal * discountPercent) / 100;
   const taxableSubtotal = Math.max(0, rawSubtotal - discountAmount);
   const cgstRate = taxConfig?.cgst ?? 2.5;
   const sgstRate = taxConfig?.sgst ?? 2.5;
@@ -213,7 +233,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       await onTransmitKot(
         customerName.trim() || undefined,
         customerPhone.trim() || undefined,
-        orderMode
+        orderMode,
+        orderMode === "delivery" ? (deliveryAddress.trim() || undefined) : undefined
       );
     } finally {
       setIsSubmittingKot(false);
@@ -625,6 +646,19 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 />
               </div>
             </div>
+
+            {orderMode === "delivery" && (
+              <div className="relative pt-0.5">
+                <MapPin className="w-3.5 h-3.5 text-sky-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Enter delivery address (flat, street, landmark)..."
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  className="w-full bg-[#1c1817] border border-sky-500/40 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-sky-400"
+                />
+              </div>
+            )}
           </div>
 
           {/* Cart Ledger Item List */}
@@ -707,10 +741,17 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   {[0, 5, 10, 15].map((pct) => (
                     <button
                       key={pct}
-                      onClick={() => {
+                      onClick={async () => {
                         setDiscountPercent(pct);
                         setAppliedPromo(null);
                         setPromoFeedback(null);
+                        if (onApplyDiscount) {
+                          try {
+                            await onApplyDiscount({ discount_percent: pct });
+                          } catch {
+                            // Handled gracefully
+                          }
+                        }
                       }}
                       className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${
                         discountPercent === pct && !appliedPromo

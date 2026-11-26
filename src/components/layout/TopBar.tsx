@@ -159,7 +159,7 @@ export function TopBar({ onOpenVoiceModal, onToggleMobileMenu }: TopBarProps) {
   const latestAlert = alerts.length > 0 ? alerts[0] : null;
 
   return (
-    <header className="h-16 border-b border-stone-800/80 bg-[#171413]/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-20 relative print:hidden">
+    <header className="h-16 border-b border-stone-800/80 bg-[#171413]/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-40 relative print:hidden">
       {/* Left: Outlet & Status */}
       <div className="flex items-center gap-3">
         {onToggleMobileMenu && (
