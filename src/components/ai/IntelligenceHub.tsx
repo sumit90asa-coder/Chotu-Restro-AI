@@ -17,12 +17,8 @@ import {
   Calendar,
   Sparkles,
 } from "lucide-react";
-import {
-  CHANNEL_SALES_SPLIT,
-  WEEKLY_TRAFFIC_SOURCES,
-  PROMOTION_IMPACTS,
-} from "@/data/mockData";
 import { fetchAnalyticsOverview, AnalyticsOverview } from "@/lib/api/analytics";
+import { fetchCoupons, Coupon } from "@/lib/api/marketing";
 
 export const IntelligenceHub: React.FC = () => {
   const router = useRouter();
@@ -30,34 +26,48 @@ export const IntelligenceHub: React.FC = () => {
   const [promoSent, setPromoSent] = useState<boolean>(false);
   const [deliveryThrottled, setDeliveryThrottled] = useState<boolean>(false);
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    fetchAnalyticsOverview()
-      .then((data) => setAnalytics(data))
-      .catch((err) => console.warn("Analytics API fallback:", err));
+    Promise.allSettled([fetchAnalyticsOverview(), fetchCoupons()])
+      .then(([ovRes, cpnRes]) => {
+        if (ovRes.status === "fulfilled") setAnalytics(ovRes.value);
+        if (cpnRes.status === "fulfilled" && Array.isArray(cpnRes.value)) setCoupons(cpnRes.value);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
-  // Live metrics grounded in database
+  // Live metrics grounded in restaurant PostgreSQL database
   const todayRevenue = analytics ? Number(analytics.today_revenue || 0) : 0;
-  const occupiedTables = analytics ? (analytics.occupied_tables || 0) : 0;
-  const totalTables = analytics ? (analytics.total_tables || 0) : 0;
+  const completedOrders = analytics ? Number(analytics.completed_orders_today ?? analytics.orders_count ?? 0) : 0;
+  const occupiedTables = analytics ? Number(analytics.occupied_tables || 0) : 0;
+  const totalTables = analytics ? Number(analytics.total_tables || 0) : 0;
   const occupancyRate = totalTables > 0 ? ((occupiedTables / totalTables) * 100).toFixed(1) : "0.0";
-  const prepPace = analytics ? `${analytics.prep_pace_minutes || analytics.avg_prep_time_minutes || 8.2}m` : "8.2m";
-  const activeKots = analytics ? (analytics.active_kots ?? analytics.active_kot_count ?? 0) : 0;
+  const prepPaceVal = analytics ? Number(analytics.prep_pace_minutes ?? analytics.avg_prep_time_minutes ?? 0) : 0;
+  const prepPace = prepPaceVal > 0 ? `${prepPaceVal}m` : "0.0m";
+  const activeKots = analytics ? Number(analytics.active_kots ?? analytics.active_kot_count ?? 0) : 0;
+  const totalDiscountGiven = analytics ? Number(analytics.total_discount_given || 0) : 0;
 
-  // Use live channel sales or fallback structure
-  const channelSales = (analytics?.channel_sales && analytics.channel_sales.length > 0)
+  const channelSales = analytics?.channel_sales && analytics.channel_sales.length > 0
     ? analytics.channel_sales
-    : CHANNEL_SALES_SPLIT.map(c => ({ ...c, revenue: 0, order_count: 0, percentage: 0 }));
+    : [
+        { channel: "store", label: "In-Store Sales (Dine-In + Counter)", percentage: 0, revenue: 0, order_count: 0, average_order_value: 0 },
+        { channel: "aggregators", label: "Online Aggregators (Zomato + Swiggy)", percentage: 0, revenue: 0, order_count: 0, average_order_value: 0 },
+        { channel: "site", label: "Direct Website & QR Ordering", percentage: 0, revenue: 0, order_count: 0, average_order_value: 0 },
+      ];
 
-  const weeklyTraffic = (analytics?.weekly_traffic && analytics.weekly_traffic.length > 0)
-    ? analytics.weekly_traffic
-    : WEEKLY_TRAFFIC_SOURCES;
+  const weeklyTraffic = analytics?.weekly_traffic || [];
+  const weeklyTotalRevenue = weeklyTraffic.reduce((acc, d) => acc + Number(d.revenue || 0), 0);
+  const weeklyTotalOrders = weeklyTraffic.reduce((acc, d) => acc + Number(d.total_orders || 0), 0);
+  const peakDay = weeklyTraffic.find((d) => d.is_peak_day) || weeklyTraffic.reduce((best, d) => (Number(d.revenue) > Number(best?.revenue || 0) ? d : best), weeklyTraffic[0]);
 
-  // Calculate totals for promotions
-  const totalDiscountSpent = PROMOTION_IMPACTS.reduce((acc, p) => acc + p.discountSpent, 0);
-  const totalPromoRevenue = PROMOTION_IMPACTS.reduce((acc, p) => acc + p.revenueGenerated, 0);
-  const blendedRoi = (totalPromoRevenue / totalDiscountSpent).toFixed(1);
+  const hourlyRevenue = analytics?.hourly_revenue || [];
+  const maxHourlyRev = Math.max(...hourlyRevenue.map((h) => Number(h.revenue || 0)), 1);
+  const lowStockAlerts = analytics?.low_stock_alerts || [];
+  const topDishes = analytics?.top_dishes || [];
+
+  const activeCoupons = coupons.filter((c) => c.is_active);
 
   return (
     <div className="flex-1 p-6 lg:p-10 bg-[#110E0D] text-stone-100 space-y-10 max-w-7xl mx-auto w-full">
@@ -71,24 +81,26 @@ export const IntelligenceHub: React.FC = () => {
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           </div>
           <p className="text-xs text-stone-400 mt-1">
-            Channel revenue attribution, day-of-week traffic dynamics, and discount margin health
+            Live channel revenue attribution, 7-day traffic dynamics, and discount margin health for your restaurant
           </p>
         </div>
 
         <div className="text-xs text-stone-400 flex items-center gap-1.5 border border-stone-800 bg-[#181514] px-3 py-1.5 font-mono rounded-xl">
           <Cpu className="w-3.5 h-3.5 text-[#E07A5F]" />
-          <span>Chotu Copilot Active • Real-time Sync</span>
+          <span>{loading ? "Syncing Database..." : "Chotu Copilot Active • Real-time Sync"}</span>
         </div>
       </div>
 
       {/* Top 4 Key Business Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-[#181514] border border-stone-800 rounded-2xl p-5 space-y-1">
-          <div className="text-xs font-mono text-stone-400 uppercase">Period Revenue</div>
-          <div className="text-2xl font-bold font-mono text-white">₹ {todayRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div className="text-xs font-mono text-stone-400 uppercase">Today&apos;s Revenue</div>
+          <div className="text-2xl font-bold font-mono text-white">
+            ₹ {todayRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
           <div className="text-xs text-emerald-400 font-medium flex items-center gap-1">
             <TrendingUp className="w-3 h-3" />
-            <span>Database settled revenue</span>
+            <span>{completedOrders} settled order{completedOrders === 1 ? "" : "s"} today</span>
           </div>
         </div>
 
@@ -105,7 +117,7 @@ export const IntelligenceHub: React.FC = () => {
           <div className="text-2xl font-bold font-mono text-white">{prepPace}</div>
           <div className="text-xs text-stone-400 flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            <span>Target: &lt;10 mins</span>
+            <span>{prepPaceVal > 0 ? "Target: <10 mins" : "No bumped KOTs today"}</span>
           </div>
         </div>
 
@@ -125,11 +137,15 @@ export const IntelligenceHub: React.FC = () => {
               <span>Channel Sales Mix (% Split)</span>
             </h3>
             <p className="text-xs text-ink-secondary mt-0.5">
-              Proportion of in-store dining, third-party delivery aggregators, and direct restaurant ordering
+              Proportion of in-store dining, third-party delivery aggregators, and direct delivery ordering
             </p>
           </div>
           <div className="text-xs font-mono text-ink-secondary">
-            Gross Tracked: <strong className="text-ink">₹ {todayRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> ({analytics?.completed_orders_today ?? (todayRevenue > 0 ? 1 : 0)} Orders)
+            Gross Tracked:{" "}
+            <strong className="text-ink">
+              ₹ {todayRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </strong>{" "}
+            ({completedOrders} Orders)
           </div>
         </div>
 
@@ -139,7 +155,7 @@ export const IntelligenceHub: React.FC = () => {
             {channelSales.map((item) => (
               <div
                 key={item.channel}
-                style={{ width: `${item.percentage || 33.3}%` }}
+                style={{ width: `${todayRevenue > 0 ? item.percentage : 33.3}%` }}
                 className={`h-full transition-all duration-300 relative group ${
                   item.channel === "store"
                     ? "bg-ink"
@@ -155,18 +171,28 @@ export const IntelligenceHub: React.FC = () => {
           <div className="flex items-center justify-between text-xs font-mono text-ink-secondary pt-1 flex-wrap gap-3">
             {channelSales.map((c) => (
               <div key={c.channel} className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 inline-block ${c.channel === "store" ? "bg-ink" : c.channel === "aggregators" ? "bg-accent" : "bg-dietary-veg"}`} />
-                <span>{c.label}: <strong className="text-ink">{c.percentage || 0}%</strong></span>
+                <span
+                  className={`w-2.5 h-2.5 inline-block ${
+                    c.channel === "store" ? "bg-ink" : c.channel === "aggregators" ? "bg-accent" : "bg-dietary-veg"
+                  }`}
+                />
+                <span>
+                  {c.label}: <strong className="text-ink">{c.percentage || 0}%</strong>
+                </span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* 3 Detailed Breakdown Cards */}
+        {/* 3 Detailed Breakdown Cards (Grounded in DB) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-          {CHANNEL_SALES_SPLIT.map((item) => {
+          {channelSales.map((item) => {
             const isStore = item.channel === "store";
             const isAggregator = item.channel === "aggregators";
+            const rev = Number(item.revenue || 0);
+            const aov = Number(item.average_order_value || 0);
+            const estCommission = Math.round(rev * 0.22);
+            const estSaved = Math.round(rev * 0.22);
             return (
               <div
                 key={item.channel}
@@ -182,20 +208,20 @@ export const IntelligenceHub: React.FC = () => {
                       ) : (
                         <Globe className="w-3.5 h-3.5 text-dietary-veg" />
                       )}
-                      <span>{item.channel === "store" ? "In-Store" : item.channel === "aggregators" ? "Aggregators" : "Direct Site"}</span>
+                      <span>{isStore ? "In-Store" : isAggregator ? "Aggregators" : "Direct Delivery"}</span>
                     </span>
                     <span className="text-xs font-mono font-bold px-2 py-0.5 border border-border bg-canvas-card">
-                      {item.percentage}%
+                      {item.percentage || 0}%
                     </span>
                   </div>
 
                   <div>
                     <div className="text-2xl font-bold font-mono text-ink">
-                      ₹ {item.revenue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      ₹ {rev.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div className="text-xs font-mono text-ink-secondary mt-1 flex items-center justify-between">
-                      <span>{item.orderCount} Orders</span>
-                      <span>AOV: ₹ {item.averageOrderValue.toFixed(0)}</span>
+                      <span>{item.order_count || 0} Orders</span>
+                      <span>AOV: ₹ {aov.toFixed(0)}</span>
                     </div>
                   </div>
                 </div>
@@ -208,12 +234,16 @@ export const IntelligenceHub: React.FC = () => {
                   )}
                   {isAggregator && (
                     <span className="text-accent font-medium">
-                      ~22% blended commission fee (est. ₹ 3,157 cut paid to platforms).
+                      {rev > 0
+                        ? `~22% blended commission fee (est. ₹ ${estCommission.toLocaleString("en-IN")} platform cut).`
+                        : "No aggregator orders recorded for this period."}
                     </span>
                   )}
                   {!isStore && !isAggregator && (
                     <span className="text-dietary-veg font-medium">
-                      Saved ₹ 1,320 in aggregator fees by routing via direct website QR.
+                      {rev > 0
+                        ? `Saved est. ₹ ${estSaved.toLocaleString("en-IN")} in aggregator fees via direct delivery.`
+                        : "No direct delivery orders recorded yet today."}
                     </span>
                   )}
                 </div>
@@ -229,14 +259,19 @@ export const IntelligenceHub: React.FC = () => {
           <div>
             <h3 className="font-bold text-sm text-ink uppercase tracking-wider font-mono flex items-center gap-2">
               <Calendar className="w-4 h-4 text-accent" />
-              <span>Weekly Traffic &amp; Source Attribution</span>
+              <span>7-Day Traffic &amp; Source Attribution</span>
             </h3>
             <p className="text-xs text-ink-secondary mt-0.5">
-              Order volume breakdown by day of week and primary channel traffic origin
+              Actual order volume and revenue across the last 7 days from your database
             </p>
           </div>
           <div className="text-xs font-mono text-ink-secondary">
-            Peak Day: <strong className="text-accent">Saturday (114 Orders)</strong>
+            Peak Day:{" "}
+            <strong className="text-accent">
+              {peakDay && peakDay.total_orders > 0
+                ? `${peakDay.day} (${peakDay.total_orders} Orders)`
+                : "No orders in last 7 days"}
+            </strong>
           </div>
         </div>
 
@@ -247,65 +282,82 @@ export const IntelligenceHub: React.FC = () => {
               <tr className="border-b border-border text-ink-secondary font-mono uppercase text-[11px]">
                 <th className="py-2.5 pr-4 font-medium">Day</th>
                 <th className="py-2.5 px-3 font-medium text-right">Total Orders</th>
-                <th className="py-2.5 px-3 font-medium">Source Mix (Store / Aggregators / Site)</th>
+                <th className="py-2.5 px-3 font-medium">Source Mix (Store / Aggregators / Delivery)</th>
                 <th className="py-2.5 px-3 font-medium">Top Traffic Driver</th>
                 <th className="py-2.5 pl-3 font-medium text-right">Day Revenue</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border font-mono">
-              {WEEKLY_TRAFFIC_SOURCES.map((d) => (
-                <tr
-                  key={d.day}
-                  className={`hover:bg-canvas-subtle transition-colors ${
-                    d.isPeakDay ? "bg-canvas-subtle/70 font-semibold" : ""
-                  }`}
-                >
-                  <td className="py-3 pr-4 font-sans text-ink flex items-center gap-2">
-                    <span>{d.day}</span>
-                    {d.isPeakDay && (
-                      <span className="px-1.5 py-0.5 text-[9px] font-mono uppercase bg-accent text-white font-bold">
-                        Weekly Peak
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-3 text-right text-ink font-bold">
-                    {d.totalOrders}
-                  </td>
-                  <td className="py-3 px-3 min-w-[180px]">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 bg-border flex overflow-hidden">
-                        <div
-                          style={{ width: `${(d.storeOrders / d.totalOrders) * 100}%` }}
-                          className="bg-ink h-full"
-                          title={`Store: ${d.storeOrders}`}
-                        />
-                        <div
-                          style={{ width: `${(d.aggregatorOrders / d.totalOrders) * 100}%` }}
-                          className="bg-accent h-full"
-                          title={`Aggregators: ${d.aggregatorOrders}`}
-                        />
-                        <div
-                          style={{ width: `${(d.siteOrders / d.totalOrders) * 100}%` }}
-                          className="bg-dietary-veg h-full"
-                          title={`Site: ${d.siteOrders}`}
-                        />
-                      </div>
-                      <span className="text-[10px] text-ink-secondary whitespace-nowrap">
-                        {d.storeOrders}/{d.aggregatorOrders}/{d.siteOrders}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-3 font-sans text-ink">
-                    <span className="inline-flex items-center gap-1 text-xs">
-                      <ArrowUpRight className="w-3 h-3 text-accent flex-shrink-0" />
-                      <span>{d.topSource}</span>
-                    </span>
-                  </td>
-                  <td className="py-3 pl-3 text-right font-bold text-ink">
-                    ₹ {d.revenue.toLocaleString("en-IN")}
+              {weeklyTraffic.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-ink-secondary text-xs">
+                    No 7-day order data recorded yet.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                weeklyTraffic.map((d) => {
+                  const storeOrders = Number(d.store_orders || 0);
+                  const aggOrders = Number(d.aggregator_orders || 0);
+                  const siteOrders = Number(d.site_orders || 0);
+                  const total = Math.max(Number(d.total_orders || 0), 1);
+                  const rev = Number(d.revenue || 0);
+                  return (
+                    <tr
+                      key={d.day}
+                      className={`hover:bg-canvas-subtle transition-colors ${
+                        d.is_peak_day ? "bg-canvas-subtle/70 font-semibold" : ""
+                      }`}
+                    >
+                      <td className="py-3 pr-4 font-sans text-ink flex items-center gap-2">
+                        <span>{d.day}</span>
+                        {d.is_peak_day && d.total_orders > 0 && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-mono uppercase bg-accent text-white font-bold">
+                            Weekly Peak
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-right text-ink font-bold">{d.total_orders}</td>
+                      <td className="py-3 px-3 min-w-[180px]">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 flex-1 bg-border flex overflow-hidden">
+                            {d.total_orders > 0 && (
+                              <>
+                                <div
+                                  style={{ width: `${(storeOrders / total) * 100}%` }}
+                                  className="bg-ink h-full"
+                                  title={`Store: ${storeOrders}`}
+                                />
+                                <div
+                                  style={{ width: `${(aggOrders / total) * 100}%` }}
+                                  className="bg-accent h-full"
+                                  title={`Aggregators: ${aggOrders}`}
+                                />
+                                <div
+                                  style={{ width: `${(siteOrders / total) * 100}%` }}
+                                  className="bg-dietary-veg h-full"
+                                  title={`Delivery: ${siteOrders}`}
+                                />
+                              </>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-ink-secondary whitespace-nowrap">
+                            {storeOrders}/{aggOrders}/{siteOrders}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 font-sans text-ink">
+                        <span className="inline-flex items-center gap-1 text-xs">
+                          <ArrowUpRight className="w-3 h-3 text-accent flex-shrink-0" />
+                          <span>{d.total_orders > 0 ? d.top_source || "In-Store Dining" : "No Orders"}</span>
+                        </span>
+                      </td>
+                      <td className="py-3 pl-3 text-right font-bold text-ink">
+                        ₹ {rev.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -318,97 +370,115 @@ export const IntelligenceHub: React.FC = () => {
               <span>Chotu Traffic Synthesis</span>
             </span>
             <p className="text-ink-secondary font-sans text-xs">
-              <strong>Saturday &amp; Friday</strong> dominate in-store dining (60% dine-in share). 
-              <strong> Mid-week dinner surges (Tuesday–Wednesday)</strong> are heavily driven by Zomato and Swiggy delivery.
+              {weeklyTotalOrders > 0 && peakDay ? (
+                <>
+                  <strong>{peakDay.day}</strong> recorded your highest volume ({peakDay.total_orders} orders, ₹{" "}
+                  {Number(peakDay.revenue || 0).toLocaleString("en-IN")}).{" "}
+                  {topDishes[0] && (
+                    <>
+                      Top dish in period: <strong>{topDishes[0].name}</strong> ({topDishes[0].quantity_sold} sold).
+                    </>
+                  )}
+                </>
+              ) : (
+                "Traffic insights will populate automatically as orders are settled in your restaurant."
+              )}
             </p>
           </div>
           <div className="text-right whitespace-nowrap">
             <div className="text-ink-secondary">Weekly Cumulative</div>
-            <div className="text-base font-bold text-ink font-mono">₹ 2,94,000 (488 Orders)</div>
+            <div className="text-base font-bold text-ink font-mono">
+              ₹ {weeklyTotalRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (
+              {weeklyTotalOrders} Orders)
+            </div>
           </div>
         </div>
       </div>
 
-      {/* SECTION 3: Promotions & Discount ROI Impact */}
+      {/* SECTION 3: Promotions & Discount Summary (Real Coupons + Discounts) */}
       <div className="bg-canvas-card border border-border p-6 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-border pb-4">
           <div>
             <h3 className="font-bold text-sm text-ink uppercase tracking-wider font-mono flex items-center gap-2">
               <Tag className="w-4 h-4 text-accent" />
-              <span>Promotions &amp; Discount ROI Impact</span>
+              <span>Promotions &amp; Discount Summary</span>
             </h3>
             <p className="text-xs text-ink-secondary mt-0.5">
-              Cost of discounting vs attributed revenue, guest retention rates, and net margin impact
+              Live promo codes configured for your restaurant and total discounts applied today
             </p>
           </div>
           <div className="text-xs font-mono text-ink-secondary flex items-center gap-4">
-            <span>Spent: <strong className="text-dietary-nonveg">₹ {totalDiscountSpent.toLocaleString("en-IN")}</strong></span>
-            <span>Attributed Rev: <strong className="text-dietary-veg">₹ {totalPromoRevenue.toLocaleString("en-IN")}</strong></span>
-            <span>Blended ROI: <strong className="text-ink">{blendedRoi}x</strong></span>
+            <span>
+              Discounts Given Today:{" "}
+              <strong className="text-dietary-nonveg">₹ {totalDiscountGiven.toLocaleString("en-IN")}</strong>
+            </span>
+            <span>
+              Active Coupons: <strong className="text-ink">{activeCoupons.length}</strong>
+            </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {PROMOTION_IMPACTS.map((promo) => (
-            <div
-              key={promo.id}
-              className="border border-border p-5 bg-canvas flex flex-col justify-between space-y-4"
+        {coupons.length === 0 ? (
+          <div className="p-6 border border-dashed border-border text-center text-xs text-ink-secondary font-mono space-y-2">
+            <p>No promo codes created yet for your restaurant.</p>
+            <button
+              type="button"
+              onClick={() => router.push("/marketing")}
+              className="px-3 py-1.5 bg-canvas border border-border hover:border-accent text-ink text-xs font-semibold cursor-pointer"
             >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
+              Create Promo Code in Marketing →
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {coupons.map((c) => (
+              <div key={c.id} className="border border-border p-5 bg-canvas flex flex-col justify-between space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="font-mono font-bold text-xs px-2 py-0.5 bg-canvas-card border border-border text-ink">
-                      {promo.code}
+                      {c.code}
                     </span>
-                    <span className="text-[11px] font-mono text-ink-secondary">
-                      {promo.channel}
+                    <span
+                      className={`text-[10px] font-mono uppercase px-2 py-0.5 border ${
+                        c.is_active
+                          ? "border-dietary-veg text-dietary-veg bg-dietary-veg/5 font-semibold"
+                          : "border-border text-ink-secondary"
+                      }`}
+                    >
+                      {c.is_active ? "Active" : "Paused"}
                     </span>
                   </div>
-
-                  <span
-                    className={`text-[10px] font-mono uppercase px-2 py-0.5 border ${
-                      promo.marginHealth === "healthy"
-                        ? "border-dietary-veg text-dietary-veg bg-dietary-veg/5 font-semibold"
-                        : "border-accent text-accent bg-accent/5 font-semibold"
-                    }`}
-                  >
-                    {promo.marginHealth === "healthy" ? "Healthy Margin" : "Moderate Margin"}
-                  </span>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-sm text-ink">{promo.name}</h4>
-                  <p className="text-xs text-ink-secondary mt-1 leading-relaxed">
-                    {promo.insightNote}
+                  <p className="text-xs text-ink-secondary">
+                    {c.description ||
+                      `${c.discount_type === "percentage" ? `${c.discount_value}% off` : `₹${c.discount_value} flat off`} on orders ≥ ₹${c.min_order_value}`}
                   </p>
                 </div>
-              </div>
 
-              {/* Promo Metrics Grid */}
-              <div className="grid grid-cols-4 gap-2 pt-3 border-t border-border text-center font-mono text-xs">
-                <div className="p-2 bg-canvas-card border border-border">
-                  <div className="text-[10px] text-ink-secondary uppercase">Discount</div>
-                  <div className="font-bold text-ink mt-0.5">₹ {promo.discountSpent}</div>
-                </div>
-                <div className="p-2 bg-canvas-card border border-border">
-                  <div className="text-[10px] text-ink-secondary uppercase">Revenue</div>
-                  <div className="font-bold text-ink mt-0.5">₹ {promo.revenueGenerated.toLocaleString("en-IN")}</div>
-                </div>
-                <div className="p-2 bg-canvas-card border border-border">
-                  <div className="text-[10px] text-ink-secondary uppercase">ROI</div>
-                  <div className="font-bold text-dietary-veg mt-0.5">{promo.roiMultiplier}</div>
-                </div>
-                <div className="p-2 bg-canvas-card border border-border">
-                  <div className="text-[10px] text-ink-secondary uppercase">Repeat Rate</div>
-                  <div className="font-bold text-ink mt-0.5">{promo.repeatGuestRate}</div>
+                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border text-center font-mono text-xs">
+                  <div className="p-2 bg-canvas-card border border-border">
+                    <div className="text-[10px] text-ink-secondary uppercase">Discount</div>
+                    <div className="font-bold text-ink mt-0.5">
+                      {c.discount_type === "percentage" ? `${c.discount_value}%` : `₹${c.discount_value}`}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-canvas-card border border-border">
+                    <div className="text-[10px] text-ink-secondary uppercase">Min Order</div>
+                    <div className="font-bold text-ink mt-0.5">₹{c.min_order_value}</div>
+                  </div>
+                  <div className="p-2 bg-canvas-card border border-border">
+                    <div className="text-[10px] text-ink-secondary uppercase">Uses</div>
+                    <div className="font-bold text-ink mt-0.5">
+                      {c.used_count} / {c.usage_limit}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Actionable Operational Suggestions (Chotu Autopilot) */}
+      {/* Actionable Operational Suggestions (Grounded in Live DB State) */}
       <div className="space-y-4">
         <h3 className="font-bold text-sm text-ink font-mono uppercase tracking-wider flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-accent" />
@@ -416,21 +486,27 @@ export const IntelligenceHub: React.FC = () => {
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Card 1: Critical Depletion */}
+          {/* Card 1: Live Low Stock */}
           <div className="bg-canvas-card border border-border p-5 flex flex-col justify-between space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-mono">
                 <span className="text-dietary-nonveg font-bold flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
-                  <span>Low Stock Warning</span>
+                  <span>Inventory Status</span>
                 </span>
-                <span className="text-ink-secondary">Depletion in 45m</span>
+                <span className="text-ink-secondary">{lowStockAlerts.length} low</span>
               </div>
 
-              <h4 className="font-bold text-base text-ink">Heavy Dairy Cream &amp; Butter</h4>
+              <h4 className="font-bold text-base text-ink">
+                {lowStockAlerts.length > 0
+                  ? lowStockAlerts.slice(0, 2).map((a) => a.name).join(" & ")
+                  : "Raw Stock Healthy"}
+              </h4>
 
               <p className="text-xs text-ink-secondary leading-relaxed">
-                At current dinner velocity (14 gravies/hr), dairy cream stock will run dry before the 9:30 PM peak.
+                {lowStockAlerts.length > 0
+                  ? `${lowStockAlerts[0].name} is at ${lowStockAlerts[0].current_stock} ${lowStockAlerts[0].unit} (threshold: ${lowStockAlerts[0].reorder_threshold} ${lowStockAlerts[0].unit}). Restock to avoid 86'ing linked dishes.`
+                  : "All raw ingredients in your inventory are currently above their reorder thresholds."}
               </p>
             </div>
 
@@ -444,7 +520,7 @@ export const IntelligenceHub: React.FC = () => {
               {poSent ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-dietary-veg" />
-                  <span>Opening Stock & PO Ledger →</span>
+                  <span>Opening Stock &amp; PO Ledger →</span>
                 </>
               ) : (
                 <span>Manage Stock &amp; POs →</span>
@@ -452,21 +528,27 @@ export const IntelligenceHub: React.FC = () => {
             </button>
           </div>
 
-          {/* Card 2: Dynamic Yield */}
+          {/* Card 2: Top Performer / Promo */}
           <div className="bg-canvas-card border border-border p-5 flex flex-col justify-between space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-mono">
                 <span className="text-accent font-bold flex items-center gap-1">
                   <TrendingUp className="w-3.5 h-3.5" />
-                  <span>Revenue Opportunity</span>
+                  <span>Menu Velocity</span>
                 </span>
-                <span className="text-dietary-veg font-bold">+₹ 4,200</span>
+                <span className="text-dietary-veg font-bold">
+                  {topDishes[0] ? `₹${Number(topDishes[0].revenue).toLocaleString("en-IN")}` : "Ready"}
+                </span>
               </div>
 
-              <h4 className="font-bold text-base text-ink">Surplus Dum Biryani Handis</h4>
+              <h4 className="font-bold text-base text-ink">
+                {topDishes[0] ? topDishes[0].name : "Menu Promotions"}
+              </h4>
 
               <p className="text-xs text-ink-secondary leading-relaxed">
-                Portions remain unsold. Suggest creating a 15% discount promo code to re-engage registered guests.
+                {topDishes[0]
+                  ? `Your top seller today with ${topDishes[0].quantity_sold} orders. Consider bundling or promoting complementary items.`
+                  : "Create targeted promo codes in Marketing to boost dine-in and direct delivery volume."}
               </p>
             </div>
 
@@ -488,21 +570,25 @@ export const IntelligenceHub: React.FC = () => {
             </button>
           </div>
 
-          {/* Card 3: Bottleneck */}
+          {/* Card 3: Live Kitchen Queue */}
           <div className="bg-canvas-card border border-border p-5 flex flex-col justify-between space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-mono">
                 <span className="text-ink font-bold flex items-center gap-1">
                   <ShieldAlert className="w-3.5 h-3.5 text-accent" />
-                  <span>Kitchen Diagnostic</span>
+                  <span>Kitchen Queue</span>
                 </span>
-                <span className="text-accent font-bold">+6m delay</span>
+                <span className="text-accent font-bold">{activeKots} active</span>
               </div>
 
-              <h4 className="font-bold text-base text-ink">Tandoor Clay Oven Queue</h4>
+              <h4 className="font-bold text-base text-ink">
+                {activeKots > 0 ? `${activeKots} Active KOT${activeKots === 1 ? "" : "s"} in Prep` : "Kitchen Clear"}
+              </h4>
 
               <p className="text-xs text-ink-secondary leading-relaxed">
-                Multiple Naan &amp; Roti breads in queue. Check real-time KDS tickets to prioritize seated guests.
+                {activeKots > 0
+                  ? `Average prep pace is ${prepPace}. Monitor station queues in KDS to keep table turnaround fast.`
+                  : "No pending KOT tickets in the kitchen display queue right now."}
               </p>
             </div>
 
@@ -526,51 +612,62 @@ export const IntelligenceHub: React.FC = () => {
         </div>
       </div>
 
-      {/* Hourly Sales Pace Grid */}
+      {/* Hourly Sales Pace Grid (Live from DB) */}
       <div className="bg-canvas-card border border-border p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-sm text-ink">Hourly Revenue Velocity</h3>
-            <p className="text-xs text-ink-secondary">Peak dinner rush: 8:00 PM – 10:30 PM</p>
+            <h3 className="font-bold text-sm text-ink">Hourly Revenue Velocity (Today)</h3>
+            <p className="text-xs text-ink-secondary">Actual settled revenue by hour in Asia/Kolkata (IST)</p>
           </div>
-          <span className="text-xs font-mono text-ink-secondary">Today vs Average</span>
+          <span className="text-xs font-mono text-ink-secondary">Live Database Ledger</span>
         </div>
 
-        <div className="h-40 flex items-end gap-3 pt-6 pb-2 border-b border-border">
-          {[
-            { hour: "5 PM", val: "₹2.1k", height: "h-12", isCurrent: false },
-            { hour: "6 PM", val: "₹4.8k", height: "h-20", isCurrent: false },
-            { hour: "7 PM", val: "₹8.4k", height: "h-28", isCurrent: false },
-            { hour: "8 PM (Now)", val: "₹16.2k", height: "h-36", isCurrent: true },
-            { hour: "9 PM (Est)", val: "₹14.0k", height: "h-32", isCurrent: false, dashed: true },
-            { hour: "10 PM (Est)", val: "₹9.2k", height: "h-20", isCurrent: false, dashed: true },
-          ].map((bar, idx) => (
-            <div key={idx} className="flex-1 flex flex-col items-center gap-1.5">
-              <span className={`text-[10px] font-mono ${bar.isCurrent ? "text-accent font-bold" : "text-ink-secondary"}`}>
-                {bar.val}
-              </span>
-              <div
-                className={`w-full ${bar.height} transition-all ${
-                  bar.isCurrent
-                    ? "bg-accent"
-                    : bar.dashed
-                    ? "border-t border-dashed border-accent bg-canvas-subtle"
-                    : "bg-border"
-                }`}
-              ></div>
-              <span className={`text-[10px] font-mono ${bar.isCurrent ? "text-accent font-bold" : "text-ink-secondary"}`}>
-                {bar.hour}
-              </span>
-            </div>
-          ))}
-        </div>
+        {hourlyRevenue.length === 0 ? (
+          <div className="py-10 text-center text-xs text-ink-secondary font-mono">
+            No hourly revenue data available yet.
+          </div>
+        ) : (
+          <div className="h-44 flex items-end gap-2 pt-6 pb-2 border-b border-border overflow-x-auto">
+            {hourlyRevenue.map((bar, idx) => {
+              const rev = Number(bar.revenue || 0);
+              const pct = rev > 0 ? Math.max(8, Math.round((rev / maxHourlyRev) * 100)) : 4;
+              return (
+                <div key={idx} className="flex-1 min-w-[44px] flex flex-col items-center gap-1.5 h-full justify-end">
+                  <span className={`text-[10px] font-mono ${bar.is_current ? "text-accent font-bold" : "text-ink-secondary"}`}>
+                    {rev > 0 ? `₹${rev >= 1000 ? `${(rev / 1000).toFixed(1)}k` : rev.toFixed(0)}` : "₹0"}
+                  </span>
+                  <div className="w-full flex-1 flex items-end">
+                    <div
+                      style={{ height: `${pct}%` }}
+                      className={`w-full transition-all ${
+                        bar.is_current
+                          ? "bg-accent"
+                          : rev > 0
+                          ? "bg-ink/80"
+                          : "bg-border/40"
+                      }`}
+                      title={`${bar.hour}: ₹${rev.toFixed(2)} (${bar.order_count} orders)`}
+                    />
+                  </div>
+                  <span className={`text-[10px] font-mono whitespace-nowrap ${bar.is_current ? "text-accent font-bold" : "text-ink-secondary"}`}>
+                    {bar.hour}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="flex items-center justify-between text-xs text-ink-secondary pt-1 font-mono">
-          <span>Projected Closing: <strong className="text-ink">₹ 78,500.00</strong></span>
-          <span className="text-dietary-veg font-semibold">+18.4% above last Saturday</span>
+          <span>
+            Today&apos;s Settled Total:{" "}
+            <strong className="text-ink">
+              ₹ {todayRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </strong>
+          </span>
+          <span className="text-dietary-veg font-semibold">{completedOrders} orders settled today</span>
         </div>
       </div>
     </div>
   );
 };
-

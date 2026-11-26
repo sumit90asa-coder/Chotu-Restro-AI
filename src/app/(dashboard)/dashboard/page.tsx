@@ -28,6 +28,8 @@ import { useAuth } from "@/lib/context/AuthContext";
 export default function DashboardPage() {
   const { user } = useAuth();
   const [revenue, setRevenue] = useState<number>(0);
+  const [growthPercent, setGrowthPercent] = useState<number>(0);
+  const [prepPace, setPrepPace] = useState<number>(0);
   const [orderCount, setOrderCount] = useState<number>(0);
   const [tables, setTables] = useState<Table[]>([]);
   const [activeKots, setActiveKots] = useState<KOT[]>([]);
@@ -38,17 +40,30 @@ export default function DashboardPage() {
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        const [overviewRes, tablesRes, kdsRes, lowStockRes, dishesRes] = await Promise.allSettled([
+        const [overviewRes, tablesRes, kdsRes, lowStockRes] = await Promise.allSettled([
           fetchSalesOverview(),
           fetchTables(),
           fetchKDSTickets(),
           fetchLowStockIngredients(),
-          fetchTopDishes(),
         ]);
 
         if (overviewRes.status === "fulfilled" && overviewRes.value) {
-          if (overviewRes.value.today_revenue) setRevenue(Number(overviewRes.value.today_revenue));
-          if (overviewRes.value.orders_count) setOrderCount(Number(overviewRes.value.orders_count));
+          const ov = overviewRes.value;
+          setRevenue(Number(ov.today_revenue || 0));
+          setGrowthPercent(Number(ov.revenue_growth_percent ?? 0));
+          setPrepPace(Number(ov.prep_pace_minutes ?? ov.avg_prep_time_minutes ?? 0));
+          setOrderCount(Number(ov.completed_orders_today ?? ov.orders_count ?? 0));
+          if (ov.top_dishes && ov.top_dishes.length > 0) {
+            setTopDishes(
+              ov.top_dishes.map((d) => ({
+                name: d.name,
+                quantity: d.quantity_sold,
+                revenue: Number(d.revenue),
+              }))
+            );
+          } else {
+            setTopDishes([]);
+          }
         }
 
         if (tablesRes.status === "fulfilled" && tablesRes.value) {
@@ -61,10 +76,6 @@ export default function DashboardPage() {
 
         if (lowStockRes.status === "fulfilled" && lowStockRes.value) {
           setLowStockCount(lowStockRes.value.length);
-        }
-
-        if (dishesRes.status === "fulfilled" && dishesRes.value && dishesRes.value.length > 0) {
-          setTopDishes(dishesRes.value);
         }
       } catch (err) {
         console.error("Error loading dashboard data:", err);
@@ -130,7 +141,10 @@ export default function DashboardPage() {
           value={`₹${revenue.toLocaleString("en-IN")}`}
           subtitle="Tax & service charge inclusive"
           icon={<TrendingUp className="w-5 h-5 text-emerald-400" />}
-          trend={{ value: "+14.2% vs yesterday", isPositive: true }}
+          trend={{
+            value: `${growthPercent >= 0 ? "+" : ""}${growthPercent}% vs yesterday`,
+            isPositive: growthPercent >= 0,
+          }}
           highlight
         />
         <StatCard
@@ -143,16 +157,16 @@ export default function DashboardPage() {
         <StatCard
           title="ORDERS COMPLETED"
           value={orderCount}
-          subtitle="Avg order value: ₹591"
+          subtitle={`Avg order value: ₹${orderCount > 0 ? Math.round(revenue / orderCount).toLocaleString("en-IN") : 0}`}
           icon={<ShoppingBag className="w-5 h-5 text-purple-400" />}
-          trend={{ value: "4.8 orders/hr", isPositive: true }}
+          trend={{ value: orderCount > 0 ? "Settled today" : "No settled orders yet", isPositive: true }}
         />
         <StatCard
           title="ACTIVE KITCHEN KOTS"
           value={`${activeKots.length} Tickets`}
-          subtitle="Avg prep time: 11.4 mins"
+          subtitle={prepPace > 0 ? `Avg prep time: ${prepPace} mins` : "No bumped KOTs today"}
           icon={<Clock className="w-5 h-5 text-amber-400" />}
-          trend={{ value: "All within SLA", isPositive: true }}
+          trend={{ value: prepPace > 15 ? "Above 15m SLA" : "Within SLA", isPositive: prepPace <= 15 }}
         />
       </div>
 
@@ -269,7 +283,27 @@ export default function DashboardPage() {
               </h2>
             </div>
             <p className="text-xs text-stone-300 leading-relaxed mb-4">
-              "Peak dinner rush expected between <strong>20:30 and 22:00</strong>. Butter Chicken demand is trending 22% higher than average Thursday. Recommend pre-portioning 5kg poultry stock."
+              {orderCount > 0 || topDishes.length > 0 ? (
+                <>
+                  Settled <strong>{orderCount} order{orderCount === 1 ? "" : "s"}</strong> today totaling{" "}
+                  <strong>₹{revenue.toLocaleString("en-IN")}</strong>.
+                  {topDishes[0] && (
+                    <> Top mover: <strong>{topDishes[0].name}</strong> ({topDishes[0].quantity} sold).</>
+                  )}{" "}
+                  {lowStockCount > 0
+                    ? `${lowStockCount} raw ingredient${lowStockCount === 1 ? "" : "s"} below safety threshold.`
+                    : "All inventory stock levels are healthy."}
+                </>
+              ) : (
+                <>
+                  {occupiedTables.length > 0
+                    ? `${occupiedTables.length} table${occupiedTables.length === 1 ? " is" : "s are"} currently occupied with ${activeKots.length} active KOT${activeKots.length === 1 ? "" : "s"}. `
+                    : "No settled orders recorded yet today. "}
+                  {lowStockCount > 0
+                    ? `${lowStockCount} raw ingredient${lowStockCount === 1 ? "" : "s"} need restocking.`
+                    : "Inventory and kitchen queues are ready for service."}
+                </>
+              )}
             </p>
             <Link
               href="/insights"

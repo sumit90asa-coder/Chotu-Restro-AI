@@ -9,7 +9,7 @@ from app.models.table import DiningTable, TableStatus
 from app.models.kot import KOT, KOTStatus
 from app.models.menu import MenuItem
 from app.services.inventory_service import InventoryService
-from app.schemas.analytics import AnalyticsOverview, ChannelSalesSummary, DayTrafficSummary, TopSellingDish
+from app.schemas.analytics import AnalyticsOverview, ChannelSalesSummary, DayTrafficSummary, TopSellingDish, HourlyRevenuePoint
 
 class AnalyticsService:
     @staticmethod
@@ -71,9 +71,9 @@ class AnalyticsService:
         
         if bumped_kots:
             prep_durations = [(k.completed_at - k.created_at).total_seconds() / 60.0 for k in bumped_kots if k.completed_at]
-            prep_pace = sum(prep_durations) / len(prep_durations) if prep_durations else 8.2
+            prep_pace = sum(prep_durations) / len(prep_durations) if prep_durations else 0.0
         else:
-            prep_pace = 8.2
+            prep_pace = 0.0
 
         # 5. Channel Sales Mix
         all_period_orders = db.query(Order).filter(
@@ -185,17 +185,67 @@ class AnalyticsService:
         # 8. Low Stock Alerts
         low_stock = InventoryService.get_low_stock_alerts(db, restaurant_id)
 
+        # 9. Previous period revenue for real growth %
+        period_span = max(end_date - start_date, timedelta(days=1))
+        prev_start = start_date - period_span
+        prev_end = start_date
+        prev_paid_orders = db.query(Order).filter(
+            Order.restaurant_id == restaurant_id,
+            Order.payment_status == PaymentStatus.PAID,
+            Order.status != OrderStatus.CANCELLED,
+            Order.created_at >= prev_start,
+            Order.created_at < prev_end
+        ).all()
+        prev_rev = sum((o.total_amount for o in prev_paid_orders), Decimal("0.00"))
+        if prev_rev > Decimal("0.00"):
+            growth_pct = round(float((period_rev - prev_rev) / prev_rev * Decimal("100")), 1)
+        elif period_rev > Decimal("0.00"):
+            growth_pct = 100.0
+        else:
+            growth_pct = 0.0
+
+        # 10. Real Hourly Revenue Velocity (IST)
+        hourly_buckets: Dict[int, Dict[str, Any]] = {}
+        for h in range(11, 24):
+            hourly_buckets[h] = {"rev": Decimal("0.00"), "cnt": 0}
+        for o in period_paid_orders:
+            created = o.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            h_ist = created.astimezone(ist).hour
+            if h_ist not in hourly_buckets:
+                hourly_buckets[h_ist] = {"rev": Decimal("0.00"), "cnt": 0}
+            hourly_buckets[h_ist]["rev"] += o.total_amount
+            hourly_buckets[h_ist]["cnt"] += 1
+
+        current_hour_ist = now_ist.hour
+        hourly_revenue = []
+        for h in sorted(hourly_buckets.keys()):
+            label_12h = f"{12 if h % 12 == 0 else h % 12} {'AM' if h < 12 else 'PM'}"
+            hourly_revenue.append(
+                HourlyRevenuePoint(
+                    hour=label_12h,
+                    revenue=hourly_buckets[h]["rev"],
+                    order_count=hourly_buckets[h]["cnt"],
+                    is_current=(h == current_hour_ist),
+                )
+            )
+
+        total_discount = sum((o.discount or Decimal("0.00") for o in period_paid_orders), Decimal("0.00"))
+
         return AnalyticsOverview(
             today_revenue=period_rev,
-            revenue_growth_percent=14.2,
+            revenue_growth_percent=growth_pct,
             occupied_tables=occupied_tables,
             total_tables=total_tables,
             occupancy_percent=round(occupancy_pct, 1),
             active_kots=active_kots,
             completed_orders_today=completed_count,
             prep_pace_minutes=round(prep_pace, 1),
+            total_discount_given=total_discount,
             channel_sales=channel_sales,
             weekly_traffic=weekly_traffic,
             top_dishes=top_dishes,
+            hourly_revenue=hourly_revenue,
             low_stock_alerts=low_stock
         )
