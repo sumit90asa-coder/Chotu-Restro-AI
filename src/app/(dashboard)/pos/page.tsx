@@ -49,6 +49,7 @@ function PosContent() {
     grandTotal: number;
     paymentMethod: string;
     date: string;
+    time?: string;
   } | null>(null);
   const [showSettleModal, setShowSettleModal] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
@@ -237,10 +238,14 @@ function PosContent() {
     const snapshotTotal = grandTotal;
 
     try {
-      await settleTableBill(selectedTableId, paymentMethod);
+      const settledRes = await settleTableBill(selectedTableId, paymentMethod);
       showToast(`Bill for ${currentTable?.label || selectedTableId} settled via ${paymentMethod.toUpperCase()}!`);
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+      const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+
       setSettledInvoice({
-        invoiceNumber: activeOrder?.order_number ? `INV-${activeOrder.order_number}` : `INV-${Date.now().toString().slice(-6)}`,
+        invoiceNumber: settledRes?.order_number || activeOrder?.order_number ? `INV-${settledRes?.order_number || activeOrder?.order_number}` : `INV-${Date.now().toString().slice(-6)}`,
         tableId: selectedTableId,
         tableName: currentTable?.label || selectedTableId,
         customerName: lastCustomerName || activeOrder?.customer_name || undefined,
@@ -251,7 +256,8 @@ function PosContent() {
         serviceCharge: snapshotSc,
         grandTotal: snapshotTotal,
         paymentMethod,
-        date: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+        date: dateStr,
+        time: timeStr,
       });
       setActiveOrder(null);
       setLedgerItems([]);
@@ -380,13 +386,13 @@ function PosContent() {
         maxWidth="md"
       >
         <div className="space-y-4">
-          {/* Printable Receipt Preview Card */}
+          {/* Printable Receipt Preview Card (Screen Preview) */}
           {settledInvoice ? (
-            <div id="printable-invoice" className="p-6 rounded-xl bg-stone-950 border border-stone-800 font-mono text-xs text-stone-300 space-y-3 print:border-none print:p-0">
+            <div className="p-6 rounded-xl bg-stone-900 border border-stone-800 font-mono text-xs text-stone-200 space-y-3 shadow-inner print:hidden">
               <div className="text-center space-y-0.5 border-b border-stone-800 pb-3">
                 <h2 className="text-base font-bold text-white uppercase">{user?.restaurantName || "CHOTU RESTRO AI"}</h2>
                 <p className="text-[10px] text-stone-400">Official Computerized Tax Invoice • Dine-In POS</p>
-                <p className="text-[10px] text-stone-400">Date: {settledInvoice.date}</p>
+                <p className="text-[10px] text-stone-400">Date: {settledInvoice.date} {settledInvoice.time || ""}</p>
               </div>
 
               <div className="flex justify-between text-[11px] pt-1">
@@ -399,7 +405,7 @@ function PosContent() {
                 </div>
               )}
               <div className="flex justify-between text-[11px] pb-2 border-b border-stone-800">
-                <span>Date: {settledInvoice.date}</span>
+                <span>Date: {settledInvoice.date} {settledInvoice.time || ""}</span>
                 <span>Payment: {settledInvoice.paymentMethod.toUpperCase()}</span>
               </div>
 
@@ -459,7 +465,7 @@ function PosContent() {
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-2">
+          <div className="flex items-center justify-end gap-2 pt-2 print:hidden">
             <button
               onClick={() => setShowPrintModal(false)}
               className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-medium"
@@ -476,6 +482,94 @@ function PosContent() {
           </div>
         </div>
       </Modal>
+
+      {/* Pure Print-Only Thermal Tax Invoice (Root Level - No Modal Clipping) */}
+      {settledInvoice && (
+        <div
+          id="printable-invoice"
+          className="hidden print:block font-mono text-black text-[12px] leading-tight"
+        >
+          {/* Thermal Receipt Header */}
+          <div className="text-center pb-2 border-b-2 border-dashed border-black space-y-1">
+            <h1 className="text-base font-extrabold uppercase tracking-wide">
+              {user?.restaurantName || "CHOTU RESTRO AI"}
+            </h1>
+            <p className="text-[11px] font-semibold uppercase">
+              Official Tax Invoice • Dine-In POS
+            </p>
+            <div className="text-[10px] pt-1 flex justify-between px-1">
+              <span>Date: {settledInvoice.date} {settledInvoice.time || ""}</span>
+              <span className="font-bold">INV: #{settledInvoice.invoiceNumber}</span>
+            </div>
+            <div className="text-[10px] flex justify-between px-1">
+              <span>Table: <strong className="uppercase">{settledInvoice.tableName}</strong></span>
+              <span>Payment: <strong className="uppercase">{settledInvoice.paymentMethod}</strong></span>
+            </div>
+            {settledInvoice.customerName && (
+              <div className="text-[10px] text-left px-1">
+                <span>Customer: <strong>{settledInvoice.customerName}</strong></span>
+              </div>
+            )}
+          </div>
+
+          {/* Items Table */}
+          <div className="py-2 border-b-2 border-dashed border-black">
+            <div className="grid grid-cols-12 font-bold pb-1 text-[11px] uppercase border-b border-black">
+              <span className="col-span-6">Item</span>
+              <span className="col-span-3 text-center">Qty x Rate</span>
+              <span className="col-span-3 text-right">Amount</span>
+            </div>
+            <div className="divide-y divide-gray-200">
+              {settledInvoice.items.length === 0 ? (
+                <div className="py-2 text-center text-gray-500 italic text-[11px]">
+                  No discrete items billed
+                </div>
+              ) : (
+                settledInvoice.items.map((it, idx) => (
+                  <div key={idx} className="grid grid-cols-12 py-1 text-[11px]">
+                    <span className="col-span-6 font-medium break-words pr-1">{it.name}</span>
+                    <span className="col-span-3 text-center">{it.quantity} x ₹{it.price}</span>
+                    <span className="col-span-3 text-right font-semibold">₹{(it.price * it.quantity).toFixed(2)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Financial Breakdown */}
+          <div className="py-2 space-y-1 text-[11px] border-b-2 border-dashed border-black">
+            <div className="flex justify-between">
+              <span>Subtotal:</span>
+              <span className="font-semibold">₹{settledInvoice.subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-gray-700">
+              <span>CGST ({taxConfig.cgst}%):</span>
+              <span>₹{settledInvoice.cgst.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-gray-700">
+              <span>SGST ({taxConfig.sgst}%):</span>
+              <span>₹{settledInvoice.sgst.toFixed(2)}</span>
+            </div>
+            {settledInvoice.serviceCharge > 0 && (
+              <div className="flex justify-between text-gray-700">
+                <span>Service Charge ({taxConfig.serviceCharge}%):</span>
+                <span>₹{settledInvoice.serviceCharge.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-[13px] font-extrabold pt-1.5 border-t border-black">
+              <span>GRAND TOTAL:</span>
+              <span>₹{settledInvoice.grandTotal.toFixed(2)}</span>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="text-center pt-2 space-y-0.5 text-[10px] text-gray-600">
+            <p className="font-bold text-black uppercase">Thank you for dining with us!</p>
+            <p>Visit again soon</p>
+            <p className="text-[9px] text-gray-400 pt-1">Powered by Chotu Restro AI</p>
+          </div>
+        </div>
+      )}
 
       {/* Floating toast */}
       {toastMessage && (

@@ -241,18 +241,36 @@
 /* Print Isolation for Tax Invoice, Z-Report, and Printable Receipts (Issue 40) */
 @media print {
   @page {
-    margin: 4mm;
+    margin: 0;
     size: auto;
   }
   html, body {
+    margin: 0 !important;
+    padding: 0 !important;
     height: auto !important;
+    min-height: 100% !important;
     overflow: visible !important;
     background: #ffffff !important;
     color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   body * {
     visibility: hidden !important;
+  }
+
+  /* Un-trap fixed modals, backdrops, overflows, and transforms during print to prevent vertical centering and clipping */
+  .fixed,
+  [class*="fixed"],
+  [class*="overflow-"],
+  [class*="transform"],
+  [class*="max-h-"] {
+    position: static !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    transform: none !important;
   }
 
   #printable-invoice,
@@ -264,6 +282,7 @@
     visibility: visible !important;
   }
 
+  /* Standard Thermal / A4 Print Receipt Layout: positioned at the very top of the page */
   #printable-invoice,
   #printable-z-report,
   .printable-area {
@@ -271,28 +290,31 @@
     left: 0 !important;
     right: 0 !important;
     top: 0 !important;
+    margin: 0 auto !important;
     width: 100% !important;
     max-width: 80mm !important;
-    margin: 0 auto !important;
-    padding: 6mm !important;
+    padding: 6mm 4mm !important;
     background-color: #ffffff !important;
     color: #000000 !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
     border: none !important;
     box-shadow: none !important;
+    page-break-inside: avoid !important;
   }
 
   #printable-invoice *,
   #printable-z-report *,
   .printable-area * {
     color: #000000 !important;
-    border-color: #cccccc !important;
+    border-color: #000000 !important;
     background-color: transparent !important;
     text-shadow: none !important;
     box-shadow: none !important;
   }
 
   button,
-  .no-print {
+  .no-print,
+  [role="dialog"] > div:first-child {
     display: none !important;
   }
 }

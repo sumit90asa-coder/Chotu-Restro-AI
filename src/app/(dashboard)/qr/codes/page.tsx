@@ -612,7 +612,7 @@ export default function QrCodesAdminPage() {
             </div>
 
             {/* Printable Preview Card */}
-            <div className="p-6 rounded-2xl bg-white text-stone-950 text-center space-y-3 shadow-md border border-stone-300">
+            <div className="printable-area p-6 rounded-2xl bg-white text-stone-950 text-center space-y-3 shadow-md border border-stone-300">
               <div>
                 <span className="text-[10px] font-mono uppercase font-bold text-[#E07A5F] tracking-widest block">
                   {user?.restaurantName || "Restaurant Table"}
