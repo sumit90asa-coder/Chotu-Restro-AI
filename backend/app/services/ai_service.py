@@ -44,7 +44,8 @@ class AIService:
 
         today_paid_orders = db.query(Order).filter(
             Order.restaurant_id == restaurant_id,
-            Order.payment_status == PaymentStatus.PAID
+            Order.payment_status == PaymentStatus.PAID,
+            Order.created_at >= today_start
         ).all()
         today_sales = sum((o.total_amount for o in today_paid_orders), Decimal("0.00"))
 
@@ -201,7 +202,6 @@ Never invent financial or inventory metrics not in this context.
         elif any(k in msg_lower for k in ["strateg", "growth", "increase business", "sales badhaye", "improve revenue", "tips", "badaun", "tarika"]):
             intent = "BUSINESS_STRATEGY"
         elif "kitchen" in msg_lower or "kot" in msg_lower or "prep" in msg_lower:
-            intent = "QUERY_KITCHEN"
             intent = "QUERY_KITCHEN"
 
         # Deterministic Grounded Handler (executes if Gemini key is not configured or network failure)

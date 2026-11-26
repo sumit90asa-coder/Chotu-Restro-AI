@@ -214,6 +214,9 @@ class OrderService:
         if not order:
             raise ValueError("Order not found")
 
+        if order.payment_status == PaymentStatus.PAID:
+            raise ValueError("Order has already been settled and paid")
+
         order.payment_status = PaymentStatus.PAID
         order.status = OrderStatus.COMPLETED
         

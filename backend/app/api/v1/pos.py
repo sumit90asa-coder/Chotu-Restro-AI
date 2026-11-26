@@ -164,7 +164,10 @@ async def settle_table_bill(
     order = db.query(Order).filter(Order.id == table.current_order_id).first()
     if not order or not order.items:
         raise HTTPException(status_code=400, detail="Cannot settle an empty order")
-    order = OrderService.settle_bill(db, order.id, req.payment_method)
+    try:
+        order = OrderService.settle_bill(db, order.id, req.payment_method)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
     await ws_manager.broadcast_to_restaurant(
         current_user.restaurant_id,
