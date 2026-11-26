@@ -3,7 +3,7 @@ import secrets
 import hashlib
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Response
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.table import DiningTable, TableStatus
@@ -100,10 +100,17 @@ def get_qr_menu(token: str, db: Session = Depends(get_db)):
     )
 
 @router.get("/{token}/order", response_model=Optional[OrderResponse])
-def get_qr_table_active_order(token: str, db: Session = Depends(get_db)):
+def get_qr_table_active_order(
+    token: str, 
+    db: Session = Depends(get_db),
+    x_customer_session: Optional[str] = Header(None, alias="X-Customer-Session")
+):
     """
     Fetch active order for table identified by secure QR token.
     Allows customers to view running bill, items, and status upon page reload or reordering.
+    Enforces privacy barrier: Only returns active order details if the request includes
+    the matching customer session token. External scanners or other guests scanning the
+    table QR code without the session token receive null (no access to bill or customer data).
     """
     table = get_table_by_token(token, db)
     if not table.current_order_id:
@@ -112,25 +119,36 @@ def get_qr_table_active_order(token: str, db: Session = Depends(get_db)):
         Order.id == table.current_order_id,
         Order.status.notin_([OrderStatus.COMPLETED, OrderStatus.CANCELLED])
     ).first()
+    if not order:
+        return None
+
+    # Privacy enforcement: if order has a customer session token, require matching header
+    if order.customer_session_token:
+        if not x_customer_session or not secrets.compare_digest(order.customer_session_token, x_customer_session):
+            return None
+
     return order
 
 @router.post("/{token}/orders", response_model=OrderResponse)
 async def submit_qr_order(
     token: str,
     submission: QROrderSubmission,
+    response: Response,
     db: Session = Depends(get_db),
-    x_idempotency_key: Optional[str] = Header(None)
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+    x_customer_session: Optional[str] = Header(None, alias="X-Customer-Session")
 ):
     """
-    CRITICAL WORKFLOW & SECURITY HARNEDING:
+    CRITICAL WORKFLOW & SECURITY HARDENING:
     1. Validates QR token using constant-time comparison against PostgreSQL.
     2. Enforces table isolation (cannot submit order for Table 2 using Table 1 token).
-    3. Enforces idempotency to prevent duplicate orders and double stock deduction.
-    4. Enforces authoritative backend pricing (client submitted prices are ignored).
-    5. Validates dish belongs to table's restaurant and is active and in-stock.
-    6. Validates quantity limits (1 <= qty <= 50).
-    7. Atomically acquires table row lock on PostgreSQL.
-    8. Fires KOT for new batch and updates live KDS via WebSockets.
+    3. Enforces session privacy and prevents cross-session table takeover.
+    4. Enforces idempotency to prevent duplicate orders and double stock deduction.
+    5. Enforces authoritative backend pricing (client submitted prices are ignored).
+    6. Validates dish belongs to table's restaurant and is active and in-stock.
+    7. Validates quantity limits (1 <= qty <= 50).
+    8. Atomically acquires table row lock on PostgreSQL.
+    9. Fires KOT for new batch and updates live KDS via WebSockets.
     """
     table = get_table_by_token(token, db)
 
@@ -141,7 +159,7 @@ async def submit_qr_order(
             detail=f"Table ID mismatch: Payload table '{submission.table_id}' does not match the scanned table '{table.id}'"
         )
 
-    # Idempotency deduplication check
+    # Idempotency deduplication check (must run before session validation)
     effective_idempotency_key = submission.idempotency_key or x_idempotency_key
     now_ts = time.time()
     if effective_idempotency_key:
@@ -149,7 +167,24 @@ async def submit_qr_order(
         if cached and (now_ts - cached[0] < 300):
             cached_order = db.query(Order).filter(Order.id == cached[1]).first()
             if cached_order:
+                if cached_order.customer_session_token:
+                    response.headers["X-Customer-Session"] = cached_order.customer_session_token
                 return cached_order
+
+    # Check for active existing order on table to enforce session integrity
+    existing_order = None
+    if table.current_order_id:
+        existing_order = db.query(Order).filter(
+            Order.id == table.current_order_id,
+            Order.status.notin_([OrderStatus.COMPLETED, OrderStatus.CANCELLED])
+        ).first()
+
+    if existing_order and existing_order.customer_session_token:
+        if x_customer_session and not secrets.compare_digest(existing_order.customer_session_token, x_customer_session):
+            raise HTTPException(
+                status_code=403,
+                detail="Table is currently occupied by an active customer session. Please request a table reset from staff."
+            )
 
     if not submission.items:
         raise HTTPException(status_code=400, detail="Cart is empty")
@@ -183,11 +218,20 @@ async def submit_qr_order(
         validated_items.append((dish, it.quantity, it.notes))
 
     try:
+        # Determine customer session
+        session_token = x_customer_session
+        if existing_order and existing_order.customer_session_token:
+            session_token = existing_order.customer_session_token
+        elif not session_token:
+            session_token = f"sess-{secrets.token_hex(16)}"
+
         # Attach to or create table order with row-level lock serialization
         order = OrderService.get_or_create_table_order(
             db, table.restaurant_id, table.id, customer_name=submission.customer_name, placed_by=PlacedBy.QR
         )
         order.placed_by = PlacedBy.QR
+        if not order.customer_session_token:
+            order.customer_session_token = session_token
         table.status = TableStatus.OCCUPIED
         table.current_order_id = order.id
 
@@ -228,6 +272,10 @@ async def submit_qr_order(
         )
 
         db.refresh(order)
+
+        # Return session header
+        if order.customer_session_token:
+            response.headers["X-Customer-Session"] = order.customer_session_token
 
         # Store in idempotency cache
         if effective_idempotency_key:

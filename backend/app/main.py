@@ -7,7 +7,7 @@ from app.database.session import Base, engine, SessionLocal
 from app.models import *  # ensure all models are registered
 from app.api.v1 import (
     auth, tables, menu, pos, qr, kds, orders, inventory, analytics, ai,
-    settings as settings_api, staff, customers, delivery, suppliers, notifications
+    settings as settings_api, staff, customers, delivery, suppliers, notifications, coupons
 )
 from app.websocket.manager import ws_manager
 
@@ -74,6 +74,7 @@ app.include_router(customers.router, prefix=f"{settings.API_V1_STR}/customers", 
 app.include_router(delivery.router, prefix=f"{settings.API_V1_STR}/delivery", tags=["Delivery & Dispatch"])
 app.include_router(suppliers.router, prefix=f"{settings.API_V1_STR}/suppliers", tags=["Suppliers & Purchase Orders"])
 app.include_router(notifications.router, prefix=f"{settings.API_V1_STR}/notifications", tags=["In-App Notifications"])
+app.include_router(coupons.router, prefix=f"{settings.API_V1_STR}/marketing/coupons", tags=["Marketing & Promo Codes"])
 
 # WebSocket Endpoint
 @app.websocket("/ws/{restaurant_id}")

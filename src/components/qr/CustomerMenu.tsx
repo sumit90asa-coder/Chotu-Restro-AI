@@ -82,9 +82,11 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
     setLoading(true);
     setFetchError(null);
     try {
+      const sessionKey = `chotu_customer_session_${token}`;
+      const sessionToken = typeof window !== "undefined" ? localStorage.getItem(sessionKey) : null;
       const [data, activeOrd] = await Promise.all([
         fetchQRMenu(token),
-        fetchCurrentQROrder(token).catch(() => null),
+        fetchCurrentQROrder(token, sessionToken).catch(() => null),
       ]);
       if (data && Array.isArray(data.items)) {
         setDishes(data.items.map(mapBackendMenuItem));
@@ -96,6 +98,11 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
       }
 
       if (activeOrd && activeOrd.id) {
+        if (activeOrd.customer_session_token) {
+          try {
+            localStorage.setItem(sessionKey, activeOrd.customer_session_token);
+          } catch {}
+        }
         const confirmed: ConfirmedOrder = {
           tokenNumber: activeOrd.token_number || activeOrd.id,
           orderNumber: activeOrd.order_number || `${tableLabel}`,
@@ -113,9 +120,17 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
         }
       } else {
         try {
-          const cached = localStorage.getItem(`chotu_qr_order_${token}`);
-          if (cached) {
-            setConfirmedOrder(JSON.parse(cached));
+          if (data?.table_status === "vacant") {
+            localStorage.removeItem(`chotu_qr_order_${token}`);
+            localStorage.removeItem(sessionKey);
+            setConfirmedOrder(null);
+          } else {
+            const cached = localStorage.getItem(`chotu_qr_order_${token}`);
+            if (cached && sessionToken) {
+              setConfirmedOrder(JSON.parse(cached));
+            } else {
+              setConfirmedOrder(null);
+            }
           }
         } catch {}
       }
@@ -200,6 +215,8 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
     if (cart.length === 0 || isSubmitting) return;
     setIsSubmitting(true);
     setSubmitError(null);
+    const sessionKey = `chotu_customer_session_${token}`;
+    const sessionToken = typeof window !== "undefined" ? localStorage.getItem(sessionKey) : null;
     const idempotencyKey = `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     try {
       const res = await submitQROrder(token, {
@@ -215,7 +232,13 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
           notes: c.notes,
         })),
         captain_notes: `Customer self-order via Table QR`,
-      });
+      }, sessionToken);
+
+      if (res?.customer_session_token) {
+        try {
+          localStorage.setItem(sessionKey, res.customer_session_token);
+        } catch {}
+      }
 
       const itemsCount = res.items
         ? res.items.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0)

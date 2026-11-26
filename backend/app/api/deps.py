@@ -32,7 +32,7 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if not token or token == "demo-token" or is_token_revoked(token):
+    if not token or token == "demo-token" or is_token_revoked(token, db=db):
         raise credentials_exception
 
     try:

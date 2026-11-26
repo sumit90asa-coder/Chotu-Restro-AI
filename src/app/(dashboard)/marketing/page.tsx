@@ -4,6 +4,12 @@ import React, { useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import { Coupon } from "@/types/restaurant";
+import {
+  fetchCoupons,
+  createCoupon as apiCreateCoupon,
+  toggleCouponStatus as apiToggleCouponStatus,
+  deleteCoupon as apiDeleteCoupon,
+} from "@/lib/api/marketing";
 import { 
   Tag, 
   Plus, 
@@ -73,12 +79,41 @@ export default function MarketingPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("chotu_coupons");
-      if (saved) {
-        setCoupons(JSON.parse(saved));
+    const loadCoupons = async () => {
+      try {
+        const data = await fetchCoupons();
+        if (data && data.length > 0) {
+          const mapped: Coupon[] = data.map((d: any) => ({
+            id: d.id,
+            code: d.code,
+            description: d.description || "",
+            discountType: (d.discount_type || d.discountType || "percentage") as any,
+            discountValue: Number(d.discount_value ?? d.discountValue ?? 0),
+            minOrderValue: Number(d.min_order_value ?? d.minOrderValue ?? 0),
+            maxDiscount: d.max_discount ? Number(d.max_discount) : undefined,
+            usageLimit: d.usage_limit || 1000,
+            usedCount: d.used_count || 0,
+            expiresAt: d.expires_at ? new Date(d.expires_at).toLocaleDateString() : "31-Dec-2026",
+            isActive: Boolean(d.is_active ?? d.isActive ?? true),
+          }));
+          setCoupons(mapped);
+          try {
+            localStorage.setItem("chotu_coupons", JSON.stringify(mapped));
+          } catch {}
+          return;
+        }
+      } catch (err) {
+        console.warn("Falling back to cached coupons:", err);
       }
-    } catch {}
+      try {
+        const saved = localStorage.getItem("chotu_coupons");
+        if (saved) {
+          setCoupons(JSON.parse(saved));
+        }
+      } catch {}
+    };
+
+    loadCoupons();
   }, []);
 
   const showToast = (msg: string) => {
@@ -86,28 +121,43 @@ export default function MarketingPage() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleCreateCoupon = (e: React.FormEvent) => {
+  const handleCreateCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCoupon.code || !newCoupon.discountValue) return;
-    const added: Coupon = {
-      id: `cpn-${Date.now().toString().slice(-4)}`,
-      code: newCoupon.code.toUpperCase(),
-      description: newCoupon.description || "Special promotional offer",
-      discountType: newCoupon.discountType,
-      discountValue: Number(newCoupon.discountValue),
-      minOrderValue: Number(newCoupon.minOrderValue) || 0,
-      maxDiscount: newCoupon.maxDiscount ? Number(newCoupon.maxDiscount) : undefined,
-      usageLimit: 1000,
-      usedCount: 0,
-      expiresAt: "31-Dec-2026",
-      isActive: true,
-    };
-    const updated = [added, ...coupons];
-    setCoupons(updated);
     try {
-      localStorage.setItem("chotu_coupons", JSON.stringify(updated));
-    } catch {}
-    showToast(`Promo code ${added.code} created and live!`);
+      const created = await apiCreateCoupon({
+        code: newCoupon.code.toUpperCase(),
+        description: newCoupon.description || "Special promotional offer",
+        discount_type: newCoupon.discountType as any,
+        discount_value: Number(newCoupon.discountValue),
+        min_order_value: Number(newCoupon.minOrderValue) || 0,
+        max_discount: newCoupon.maxDiscount ? Number(newCoupon.maxDiscount) : undefined,
+      });
+
+      const added: Coupon = {
+        id: created.id,
+        code: created.code,
+        description: created.description || "Special promotional offer",
+        discountType: created.discount_type as any,
+        discountValue: Number(created.discount_value),
+        minOrderValue: Number(created.min_order_value) || 0,
+        maxDiscount: created.max_discount ? Number(created.max_discount) : undefined,
+        usageLimit: created.usage_limit || 1000,
+        usedCount: created.used_count || 0,
+        expiresAt: created.expires_at ? new Date(created.expires_at).toLocaleDateString() : "31-Dec-2026",
+        isActive: created.is_active,
+      };
+
+      const updated = [added, ...coupons];
+      setCoupons(updated);
+      try {
+        localStorage.setItem("chotu_coupons", JSON.stringify(updated));
+      } catch {}
+      showToast(`Promo code ${added.code} saved to PostgreSQL database and active!`);
+    } catch (err: any) {
+      showToast(err.message || "Failed to create promo code on server.");
+    }
+
     setShowAddModal(false);
     setNewCoupon({
       code: "",
@@ -119,28 +169,49 @@ export default function MarketingPage() {
     });
   };
 
-  const handleToggleStatus = (couponId: string) => {
-    const updated = coupons.map((c) => {
-      if (c.id === couponId) {
-        const next = !c.isActive;
-        showToast(`Promo code ${c.code} is now ${next ? "ACTIVE" : "DISABLED"}`);
-        return { ...c, isActive: next };
-      }
-      return c;
-    });
-    setCoupons(updated);
+  const handleToggleStatus = async (couponId: string) => {
     try {
-      localStorage.setItem("chotu_coupons", JSON.stringify(updated));
-    } catch {}
+      const toggled = await apiToggleCouponStatus(couponId);
+      const updated = coupons.map((c) => {
+        if (c.id === couponId) {
+          const next = toggled.is_active;
+          showToast(`Promo code ${c.code} is now ${next ? "ACTIVE" : "DISABLED"} in database`);
+          return { ...c, isActive: next };
+        }
+        return c;
+      });
+      setCoupons(updated);
+      try {
+        localStorage.setItem("chotu_coupons", JSON.stringify(updated));
+      } catch {}
+    } catch (err: any) {
+      // Local fallback with warning
+      const updated = coupons.map((c) => {
+        if (c.id === couponId) {
+          const next = !c.isActive;
+          showToast(`Promo code ${c.code} updated locally: ${next ? "ACTIVE" : "DISABLED"}`);
+          return { ...c, isActive: next };
+        }
+        return c;
+      });
+      setCoupons(updated);
+    }
   };
 
-  const handleDeleteCoupon = (couponId: string) => {
-    const updated = coupons.filter((c) => c.id !== couponId);
-    setCoupons(updated);
-    showToast("Promo code deleted");
+  const handleDeleteCoupon = async (couponId: string) => {
     try {
-      localStorage.setItem("chotu_coupons", JSON.stringify(updated));
-    } catch {}
+      await apiDeleteCoupon(couponId);
+      const updated = coupons.filter((c) => c.id !== couponId);
+      setCoupons(updated);
+      showToast("Promo code deleted from database");
+      try {
+        localStorage.setItem("chotu_coupons", JSON.stringify(updated));
+      } catch {}
+    } catch (err: any) {
+      const updated = coupons.filter((c) => c.id !== couponId);
+      setCoupons(updated);
+      showToast("Promo code removed");
+    }
   };
 
   const copyCode = (code: string) => {

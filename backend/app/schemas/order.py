@@ -86,6 +86,7 @@ class OrderResponse(BaseModel):
     aggregator_rider_name: Optional[str] = None
     aggregator_rider_status: Optional[str] = None
     aggregator_otp: Optional[str] = None
+    customer_session_token: Optional[str] = None
     
     created_at: datetime
     items: List[OrderItemResponse] = []

@@ -10,6 +10,8 @@ from app.models.audit_log import AuditLog, AIConversation
 from app.models.customer import Customer, LoyaltyTransaction, CustomerFeedback, LoyaltyTxType
 from app.models.supplier import Supplier, PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus
 from app.models.notification import Notification, NotificationType, NotificationSeverity
+from app.models.revoked_token import RevokedToken
+from app.models.coupon import Coupon
 
 __all__ = [
     "Restaurant",
@@ -50,4 +52,6 @@ __all__ = [
     "Notification",
     "NotificationType",
     "NotificationSeverity",
+    "RevokedToken",
+    "Coupon",
 ]

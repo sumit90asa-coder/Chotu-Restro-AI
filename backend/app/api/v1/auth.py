@@ -200,10 +200,11 @@ def get_me(current_user: User = Depends(get_current_user)):
 @router.post("/logout")
 def logout(
     current_user: User = Depends(get_current_user),
-    token: str = Depends(oauth2_scheme)
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
 ):
-    """Explicitly terminate/revoke active staff session."""
-    revoke_token(token)
+    """Explicitly terminate/revoke active staff session with PostgreSQL persistence."""
+    revoke_token(token, db=db, user_id=current_user.id)
     return {
         "message": "Session terminated and revoked successfully",
         "user_id": current_user.id,

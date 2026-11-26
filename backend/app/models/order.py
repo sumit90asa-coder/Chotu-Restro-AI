@@ -64,6 +64,7 @@ class Order(Base):
     
     # Customer context
     customer_id = Column(String(36), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    customer_session_token = Column(String(128), nullable=True, index=True)
     
     # Delivery OTP & Dispatch Security (Phase 4)
     delivery_otp_hash = Column(String(128), nullable=True)

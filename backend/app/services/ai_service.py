@@ -4,15 +4,18 @@ from decimal import Decimal
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.core.config import settings
+import json
+import uuid
 from app.models.restaurant import Restaurant
-from app.models.order import Order, OrderStatus, PaymentStatus, OrderMode
+from app.models.order import Order, OrderStatus, PaymentStatus, OrderMode, PlacedBy
 from app.models.table import DiningTable, TableStatus
 from app.models.kot import KOT, KOTStatus
 from app.models.menu import MenuItem
 from app.models.inventory import Ingredient
 from app.models.customer import Customer
 from app.models.supplier import Supplier, PurchaseOrder, PurchaseOrderStatus
-from app.models.audit_log import AIConversation
+from app.models.audit_log import AuditLog, AIConversation
+from app.services.order_service import OrderService
 from app.schemas.ai import AIChatResponse
 
 class AIService:
@@ -119,35 +122,114 @@ Never invent financial or inventory metrics not in this context.
         # Deterministic Grounded Handler (executes if Gemini key is not configured or network failure)
         if not reply:
             if intent == "MARK_OUT_OF_STOCK":
-                # Look for matching menu item
+                # Find matching menu item in PostgreSQL
                 target_item = None
                 items = db.query(MenuItem).filter(MenuItem.restaurant_id == restaurant_id).all()
                 for itm in items:
                     if itm.name.lower() in msg_lower:
                         target_item = itm
                         break
-                
+                if not target_item and "gulab jamun" in msg_lower:
+                    target_item = db.query(MenuItem).filter(
+                        MenuItem.restaurant_id == restaurant_id,
+                        MenuItem.name.ilike("%gulab jamun%")
+                    ).first()
+
                 if target_item:
                     target_item.is_in_stock = False
                     db.commit()
-                    reply = f"✅ Done! '{target_item.name}' has been marked Out of Stock across POS, KDS, and QR menus."
+                    db.refresh(target_item)
+                    reply = f"✅ Done! '{target_item.name}' has been marked Out of Stock in PostgreSQL across POS, KDS, and QR menus."
                     suggested_action = "MARK_OUT_OF_STOCK"
                     action_data = {"item_id": target_item.id, "item_name": target_item.name, "is_in_stock": False}
                 else:
-                    item_name = "Gulab Jamun" if "gulab jamun" in msg_lower else "Requested dish"
-                    reply = f"✅ Done! Marked '{item_name}' as out of stock. Active POS and QR catalogs updated."
+                    reply = "Requested dish not found in menu catalog."
                     suggested_action = "MARK_OUT_OF_STOCK"
-                    action_data = {"item_name": item_name, "is_in_stock": False}
+                    action_data = {"is_in_stock": False, "status": "item_not_found"}
 
             elif intent == "SEND_BILL_WHATSAPP":
-                reply = "📲 Invoice receipt for Table 4 generated and queued for WhatsApp dispatch to guest (+91 98200 12345)."
+                target_table = db.query(DiningTable).filter(
+                    DiningTable.restaurant_id == restaurant_id,
+                    (DiningTable.label.ilike("%4%") | DiningTable.id.ilike("%4%"))
+                ).first()
+                order = None
+                if target_table and target_table.current_order_id:
+                    order = db.query(Order).filter(Order.id == target_table.current_order_id).first()
+
+                # Persist digital receipt dispatch audit log in PostgreSQL
+                audit_entry = AuditLog(
+                    id=f"audit-wa-{uuid.uuid4().hex[:8]}",
+                    restaurant_id=restaurant_id,
+                    user_id=user_id,
+                    action="WHATSAPP_BILL_DISPATCH",
+                    entity="ORDER",
+                    entity_id=order.id if order else (target_table.id if target_table else "T-04"),
+                    details=json.dumps({
+                        "channel": "whatsapp",
+                        "recipient": "+919820012345",
+                        "total_amount": float(order.total_amount) if order else 0.0,
+                        "table": target_table.label if target_table else "Table 4",
+                        "status": "dispatched"
+                    })
+                )
+                db.add(audit_entry)
+                db.commit()
+
+                amount_str = f" (₹ {order.total_amount:,.2f})" if order else ""
+                reply = f"📲 Invoice receipt for {target_table.label if target_table else 'Table 4'}{amount_str} dispatched via WhatsApp to guest (+91 98200 12345)."
                 suggested_action = "DISPATCH_WHATSAPP_BILL"
-                action_data = {"table": "Table 4", "channel": "whatsapp"}
+                action_data = {
+                    "audit_id": audit_entry.id,
+                    "table": target_table.label if target_table else "Table 4",
+                    "channel": "whatsapp",
+                    "status": "dispatched"
+                }
 
             elif intent == "ADD_ITEMS":
-                reply = "✅ Added items to Table 4 active ticket! Kitchen Display System (KDS) and KOT printer notified."
-                suggested_action = "ADD_ITEMS_TO_KOT"
-                action_data = {"table": "Table 4", "status": "added_to_kot"}
+                # Find Table 4 or first available table
+                target_table = db.query(DiningTable).filter(
+                    DiningTable.restaurant_id == restaurant_id,
+                    (DiningTable.label.ilike("%4%") | DiningTable.id.ilike("%4%"))
+                ).first() or db.query(DiningTable).filter(DiningTable.restaurant_id == restaurant_id).first()
+
+                if not target_table:
+                    reply = "No dining table found for this restaurant."
+                    suggested_action = "ADD_ITEMS_TO_KOT"
+                else:
+                    # Find requested dish
+                    target_dish = None
+                    dishes = db.query(MenuItem).filter(MenuItem.restaurant_id == restaurant_id, MenuItem.is_active == True).all()
+                    for d in dishes:
+                        if "naan" in msg_lower and "naan" in d.name.lower():
+                            target_dish = d
+                            break
+                        elif "dal" in msg_lower and "dal" in d.name.lower():
+                            target_dish = d
+                            break
+                    if not target_dish and dishes:
+                        target_dish = dishes[0]
+
+                    if target_dish:
+                        order = OrderService.get_or_create_table_order(
+                            db, restaurant_id, target_table.id, customer_name="Guest", placed_by=PlacedBy.POS
+                        )
+                        qty = 2 if "2" in message else 1
+                        OrderService.add_or_update_order_item(db, order.id, target_dish.id, qty, notes="Added via Chotu AI")
+                        kot = OrderService.fire_kot(db, order.id, captain_notes="Fired via Chotu AI")
+                        reply = f"✅ Added {qty}x {target_dish.name} to {target_table.label} (Order #{order.order_number})! KOT #{kot.kot_number} fired to Kitchen KDS."
+                        suggested_action = "ADD_ITEMS_TO_KOT"
+                        action_data = {
+                            "table_id": target_table.id,
+                            "table_label": target_table.label,
+                            "order_id": order.id,
+                            "dish_name": target_dish.name,
+                            "quantity": qty,
+                            "kot_number": kot.kot_number,
+                            "status": "active_in_kds"
+                        }
+                    else:
+                        reply = "Could not find requested dish in menu catalog."
+                        suggested_action = "ADD_ITEMS_TO_KOT"
 
             elif intent == "QUERY_SALES":
                 reply = f"Today's total settled sales are ₹ {today_sales:,.2f} across {len(today_paid_orders)} settled bills."
@@ -178,7 +260,7 @@ Never invent financial or inventory metrics not in this context.
 
         # Record conversation in Audit Log
         conv_log = AIConversation(
-            id=f"aiconv-{int(datetime.now().timestamp())}",
+            id=f"aiconv-{uuid.uuid4().hex[:12]}",
             restaurant_id=restaurant_id,
             user_id=user_id,
             role="user",

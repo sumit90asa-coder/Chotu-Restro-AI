@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
@@ -14,25 +15,31 @@ class AnalyticsService:
     @staticmethod
     def get_overview(db: Session, restaurant_id: str, period: str = "today") -> AnalyticsOverview:
         now = datetime.now(timezone.utc)
+        ist = ZoneInfo("Asia/Kolkata")
+        now_ist = now.astimezone(ist)
         
-        # Calculate date boundaries based on requested period filter
+        # Calculate date boundaries based on requested period filter aligned with Asia/Kolkata
         if period == "yesterday":
-            start_date = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc) - timedelta(days=1)
-            end_date = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc)
+            start_ist = datetime(now_ist.year, now_ist.month, now_ist.day, 0, 0, 0, tzinfo=ist) - timedelta(days=1)
+            end_ist = datetime(now_ist.year, now_ist.month, now_ist.day, 0, 0, 0, tzinfo=ist)
         elif period == "last_7_days":
-            start_date = now - timedelta(days=7)
-            end_date = now
+            start_ist = now_ist - timedelta(days=7)
+            end_ist = now_ist
         elif period == "this_month":
-            start_date = datetime(now.year, now.month, 1, 0, 0, 0, tzinfo=timezone.utc)
-            end_date = now
+            start_ist = datetime(now_ist.year, now_ist.month, 1, 0, 0, 0, tzinfo=ist)
+            end_ist = now_ist
         else: # "today"
-            start_date = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc)
-            end_date = now
+            start_ist = datetime(now_ist.year, now_ist.month, now_ist.day, 0, 0, 0, tzinfo=ist)
+            end_ist = now_ist
+            
+        start_date = start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+        end_date = end_ist.astimezone(timezone.utc).replace(tzinfo=None)
         
-        # 1. Period Revenue (Legitimate completed and paid orders)
+        # 1. Period Revenue (Legitimate completed and paid orders, excluding cancelled)
         period_paid_orders = db.query(Order).filter(
             Order.restaurant_id == restaurant_id,
             Order.payment_status == PaymentStatus.PAID,
+            Order.status != OrderStatus.CANCELLED,
             Order.created_at >= start_date,
             Order.created_at <= end_date
         ).all()
@@ -79,9 +86,9 @@ class AnalyticsService:
         agg_orders = [o for o in all_period_orders if o.mode in (OrderMode.ZOMATO, OrderMode.SWIGGY, OrderMode.UBEREATS, OrderMode.DOORDASH)]
         site_orders = [o for o in all_period_orders if o.mode == OrderMode.DELIVERY]
 
-        store_rev = sum((o.total_amount for o in store_orders if o.payment_status == PaymentStatus.PAID), Decimal("0.00"))
-        agg_rev = sum((o.total_amount for o in agg_orders if o.payment_status == PaymentStatus.PAID), Decimal("0.00"))
-        site_rev = sum((o.total_amount for o in site_orders if o.payment_status == PaymentStatus.PAID), Decimal("0.00"))
+        store_rev = sum((o.total_amount for o in store_orders if o.payment_status == PaymentStatus.PAID and o.status != OrderStatus.CANCELLED), Decimal("0.00"))
+        agg_rev = sum((o.total_amount for o in agg_orders if o.payment_status == PaymentStatus.PAID and o.status != OrderStatus.CANCELLED), Decimal("0.00"))
+        site_rev = sum((o.total_amount for o in site_orders if o.payment_status == PaymentStatus.PAID and o.status != OrderStatus.CANCELLED), Decimal("0.00"))
         gross_rev = store_rev + agg_rev + site_rev
         denom_rev = gross_rev if gross_rev > Decimal("0.00") else Decimal("1.00")
 

@@ -46,17 +46,26 @@ export async function fetchQRTableInfo(token: string): Promise<QRTableInfo> {
   return await apiFetch<QRTableInfo>(`/qr/${token}/table`);
 }
 
-export async function fetchCurrentQROrder(token: string): Promise<any | null> {
+export async function fetchCurrentQROrder(token: string, sessionToken?: string | null): Promise<any | null> {
   try {
-    return await apiFetch(`/qr/${token}/order`);
+    const headers: Record<string, string> = {};
+    if (sessionToken) {
+      headers["X-Customer-Session"] = sessionToken;
+    }
+    return await apiFetch(`/qr/${token}/order`, { headers });
   } catch {
     return null;
   }
 }
 
-export async function submitQROrder(token: string, payload: QROrderSubmission): Promise<any> {
+export async function submitQROrder(token: string, payload: QROrderSubmission, sessionToken?: string | null): Promise<any> {
+  const headers: Record<string, string> = {};
+  if (sessionToken) {
+    headers["X-Customer-Session"] = sessionToken;
+  }
   return await apiFetch(`/qr/${token}/orders`, {
     method: "POST",
+    headers,
     body: JSON.stringify(payload),
   });
 }

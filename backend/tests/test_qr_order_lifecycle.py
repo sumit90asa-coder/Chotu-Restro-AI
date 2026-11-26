@@ -48,7 +48,9 @@ def test_qr_self_order_persistence_and_occupancy(unauthenticated_client: TestCli
     assert table.current_order_id == order_id
 
     # 5. Customer refreshes page -> GET /{token}/order must return existing order
-    refresh_resp = client.get(f"/api/v1/qr/{qr_token}/order")
+    sess_token = order_resp1.headers.get("X-Customer-Session") or order1.get("customer_session_token")
+    headers = {"X-Customer-Session": sess_token} if sess_token else {}
+    refresh_resp = client.get(f"/api/v1/qr/{qr_token}/order", headers=headers)
     assert refresh_resp.status_code == 200
     persisted_order = refresh_resp.json()
     assert persisted_order is not None

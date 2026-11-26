@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Image from "next/image";
 import { Table, MenuItem, OrderItem } from "@/types/restaurant";
 import { MENU_ITEMS } from "@/data/mockData";
+import { validateCoupon } from "@/lib/api/marketing";
 import { 
   Search, 
   Plus, 
@@ -72,42 +73,63 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
   const [promoFeedback, setPromoFeedback] = useState<{ message: string; isError: boolean } | null>(null);
 
-  const handleApplyPromo = () => {
+  const handleApplyPromo = async () => {
     setPromoFeedback(null);
     const query = promoCodeInput.trim().toUpperCase();
     if (!query) return;
 
     try {
-      const stored = localStorage.getItem("chotu_coupons");
-      const coupons = stored ? JSON.parse(stored) : [];
-      const found = coupons.find((c: any) => c.code.toUpperCase() === query);
-
-      if (!found) {
-        setPromoFeedback({ message: `Code "${query}" not found`, isError: true });
+      // 1. Validate against PostgreSQL backend
+      const res = await validateCoupon(query, rawSubtotal);
+      if (!res.valid) {
+        setPromoFeedback({ message: res.message, isError: true });
         return;
       }
 
-      if (!found.isActive) {
-        setPromoFeedback({ message: `Promo code "${query}" is currently disabled`, isError: true });
-        return;
-      }
-
-      if (rawSubtotal < (found.minOrderValue || 0)) {
-        setPromoFeedback({ message: `Min order ₹${found.minOrderValue} required for this code`, isError: true });
-        return;
-      }
-
-      if (found.discountType === "percentage") {
-        setDiscountPercent(found.discountValue);
+      if (res.discount_type === "percentage") {
+        setDiscountPercent(res.discount_value);
       } else {
-        const pct = rawSubtotal > 0 ? Math.min(100, (found.discountValue / rawSubtotal) * 100) : 0;
+        const pct = rawSubtotal > 0 ? Math.min(100, (res.discount_amount / rawSubtotal) * 100) : 0;
         setDiscountPercent(Number(pct.toFixed(1)));
       }
 
-      setAppliedPromo(found.code);
-      setPromoFeedback({ message: `Applied ${found.code}!`, isError: false });
+      setAppliedPromo(res.code);
+      setPromoFeedback({ message: res.message, isError: false });
+      return;
     } catch {
-      setPromoFeedback({ message: "Could not apply promo code", isError: true });
+      // Fallback to local cache if network is unreachable
+      try {
+        const stored = localStorage.getItem("chotu_coupons");
+        const coupons = stored ? JSON.parse(stored) : [];
+        const found = coupons.find((c: any) => c.code.toUpperCase() === query);
+
+        if (!found) {
+          setPromoFeedback({ message: `Code "${query}" not found`, isError: true });
+          return;
+        }
+
+        if (!found.isActive) {
+          setPromoFeedback({ message: `Promo code "${query}" is currently disabled`, isError: true });
+          return;
+        }
+
+        if (rawSubtotal < (found.minOrderValue || 0)) {
+          setPromoFeedback({ message: `Min order ₹${found.minOrderValue} required for this code`, isError: true });
+          return;
+        }
+
+        if (found.discountType === "percentage") {
+          setDiscountPercent(found.discountValue);
+        } else {
+          const pct = rawSubtotal > 0 ? Math.min(100, (found.discountValue / rawSubtotal) * 100) : 0;
+          setDiscountPercent(Number(pct.toFixed(1)));
+        }
+
+        setAppliedPromo(found.code);
+        setPromoFeedback({ message: `Applied ${found.code}!`, isError: false });
+      } catch {
+        setPromoFeedback({ message: "Could not apply promo code", isError: true });
+      }
     }
   };
 
