@@ -14,4 +14,13 @@ async def chat_with_chotu(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return await AIService.chat(db, current_user.restaurant_id, req.message, current_user.id)
+    history_dicts = None
+    if req.conversation_history:
+        history_dicts = [{"role": h.role, "content": h.content} for h in req.conversation_history]
+    return await AIService.chat(
+        db=db,
+        restaurant_id=current_user.restaurant_id,
+        message=req.message,
+        user_id=current_user.id,
+        conversation_history=history_dicts
+    )
