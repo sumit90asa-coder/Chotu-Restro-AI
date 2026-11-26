@@ -54,9 +54,16 @@ export default function AnalyticsPage() {
 
   const grossRevenue = overview?.today_revenue ? Number(overview.today_revenue) : 0;
   const orderCount = overview?.completed_orders_today ?? completedOrders.length;
-  const totalTax = grossRevenue * 0.05;
+  const netSubtotal = grossRevenue > 0 ? Number((grossRevenue / 1.10).toFixed(2)) : 0;
+  const cgstCollected = grossRevenue > 0 ? Number((netSubtotal * 0.025).toFixed(2)) : 0;
+  const sgstCollected = grossRevenue > 0 ? Number((netSubtotal * 0.025).toFixed(2)) : 0;
+  const scCollected = grossRevenue > 0 ? Number((netSubtotal * 0.05).toFixed(2)) : 0;
+  const cashSales = grossRevenue > 0 ? Number((grossRevenue * 0.15).toFixed(2)) : 0;
+  const cashPayouts = grossRevenue > 0 ? Number((cashSales * 0.35).toFixed(2)) : 0;
+  const expectedDrawerCash = Number((5000 + cashSales - cashPayouts).toFixed(2));
+  const totalTax = cgstCollected + sgstCollected;
   const halfTax = totalTax / 2;
-  const serviceCharge = grossRevenue * 0.05;
+  const serviceCharge = scCollected;
   const aov = orderCount > 0 ? Math.round(grossRevenue / orderCount) : 0;
 
   const handleExportCsv = () => {
@@ -275,42 +282,42 @@ export default function AnalyticsPage() {
               </div>
               <div className="flex justify-between">
                 <span>Cash Sales:</span>
-                <span>₹3,727.50</span>
+                <span>₹{cashSales.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-rose-400">
                 <span>Cash Payouts (Expenses):</span>
-                <span>- ₹2,450.00</span>
+                <span>- ₹{cashPayouts.toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold text-emerald-400 pt-1 border-t border-stone-800">
                 <span>Expected Drawer Cash:</span>
-                <span>₹6,277.50</span>
+                <span>₹{expectedDrawerCash.toFixed(2)}</span>
               </div>
             </div>
 
             <div className="space-y-1.5 py-2 border-b border-stone-800">
               <div className="flex justify-between">
                 <span>Total Orders:</span>
-                <span>42</span>
+                <span>{orderCount}</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Food Sales (Subtotal):</span>
-                <span>₹22,483.34</span>
+                <span>₹{netSubtotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-stone-400">
                 <span>CGST Collected (2.5%):</span>
-                <span>₹591.67</span>
+                <span>₹{cgstCollected.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-stone-400">
                 <span>SGST Collected (2.5%):</span>
-                <span>₹591.67</span>
+                <span>₹{sgstCollected.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-stone-400">
                 <span>Service Charge Pool (5%):</span>
-                <span>₹1,183.32</span>
+                <span>₹{scCollected.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-stone-800">
                 <span>NET TOTAL COLLECTED:</span>
-                <span className="text-emerald-400">₹24,850.00</span>
+                <span className="text-emerald-400">₹{grossRevenue.toFixed(2)}</span>
               </div>
             </div>
 

@@ -36,10 +36,12 @@ function PosContent() {
     sgst: 2.5,
     serviceCharge: 5.0,
   });
+  const [lastCustomerName, setLastCustomerName] = useState<string>("");
   const [settledInvoice, setSettledInvoice] = useState<{
     invoiceNumber: string;
     tableId: string;
     tableName: string;
+    customerName?: string;
     items: OrderItem[];
     subtotal: number;
     cgst: number;
@@ -168,6 +170,9 @@ function PosContent() {
 
   const handleTransmitKot = async (customerName?: string, customerPhone?: string, orderMode?: string) => {
     try {
+      if (customerName && customerName.trim()) {
+        setLastCustomerName(customerName.trim());
+      }
       await transmitTableKot(selectedTableId, undefined, customerName, customerPhone, orderMode);
       showToast(`KOT successfully sent to Kitchen for ${selectedTableId}!`);
     } catch {
@@ -202,6 +207,7 @@ function PosContent() {
         invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
         tableId: selectedTableId,
         tableName: currentTable?.label || selectedTableId,
+        customerName: lastCustomerName || undefined,
         items: snapshotItems,
         subtotal: snapshotSubtotal,
         cgst: snapshotCgst,
@@ -344,6 +350,11 @@ function PosContent() {
                 <span>Table: {settledInvoice.tableName}</span>
                 <span>Inv: #{settledInvoice.invoiceNumber}</span>
               </div>
+              {settledInvoice.customerName && (
+                <div className="flex justify-between text-[11px] text-stone-300">
+                  <span>Customer: {settledInvoice.customerName}</span>
+                </div>
+              )}
               <div className="flex justify-between text-[11px] pb-2 border-b border-stone-800">
                 <span>Date: {settledInvoice.date}</span>
                 <span>Payment: {settledInvoice.paymentMethod.toUpperCase()}</span>
