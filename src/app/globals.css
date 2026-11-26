@@ -238,12 +238,13 @@
   transform: translateY(1px) scale(0.98);
 }
 
-/* Print Isolation for Tax Invoice, Z-Report, and Printable Receipts (Issue 40) */
+/* Print Isolation & Styling Engine (POS Receipts, Z-Reports, QR Table Cards) */
 @media print {
   @page {
-    margin: 0;
+    margin: 8mm;
     size: auto;
   }
+
   html, body {
     margin: 0 !important;
     padding: 0 !important;
@@ -256,11 +257,24 @@
     print-color-adjust: exact !important;
   }
 
-  body * {
-    visibility: hidden !important;
+  /* 1. Global UI Clutter Removal */
+  aside,
+  header,
+  nav,
+  button,
+  input,
+  select,
+  .no-print,
+  .print\:hidden,
+  [role="dialog"] > div:first-child {
+    display: none !important;
   }
 
-  /* Un-trap fixed modals, backdrops, overflows, and transforms during print to prevent vertical centering and clipping */
+  /* 2. Un-trap fixed containers, scroll overlays, and dark theme wrappers */
+  div[data-theme="dark-obsidian"],
+  div[data-theme="dark-obsidian"] > div,
+  main,
+  .flex-1,
   .fixed,
   [class*="fixed"],
   [class*="overflow-"],
@@ -271,21 +285,14 @@
     max-height: none !important;
     height: auto !important;
     transform: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 
+  /* 3. Thermal Receipt Slips (#printable-invoice & #printable-z-report) */
   #printable-invoice,
-  #printable-invoice *,
-  #printable-z-report,
-  #printable-z-report *,
-  .printable-area,
-  .printable-area * {
-    visibility: visible !important;
-  }
-
-  /* Standard Thermal / A4 Print Receipt Layout: positioned at the very top of the page */
-  #printable-invoice,
-  #printable-z-report,
-  .printable-area {
+  #printable-z-report {
+    display: block !important;
     position: absolute !important;
     left: 0 !important;
     right: 0 !important;
@@ -303,19 +310,53 @@
   }
 
   #printable-invoice *,
-  #printable-z-report *,
-  .printable-area * {
+  #printable-z-report * {
     color: #000000 !important;
     border-color: #000000 !important;
     background-color: transparent !important;
-    text-shadow: none !important;
-    box-shadow: none !important;
   }
 
-  button,
-  .no-print,
-  [role="dialog"] > div:first-child {
-    display: none !important;
+  /* 4. Single QR Card Modal (#printable-single-qr) */
+  #printable-single-qr {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: 20mm !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 110mm !important;
+    page-break-inside: avoid !important;
+  }
+
+  #printable-single-qr * {
+    color: #000000 !important;
+  }
+
+  /* 5. Batch Table QR Cards Grid (#printable-qr-grid) */
+  #printable-qr-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 1.5rem !important;
+    padding: 0 !important;
+    width: 100% !important;
+    background: #ffffff !important;
+  }
+
+  #printable-qr-grid > div {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 2px solid #292524 !important;
+    box-shadow: none !important;
+    border-radius: 1rem !important;
+    padding: 1.5rem !important;
+    margin-bottom: 1rem !important;
+  }
+
+  #printable-qr-grid * {
+    color: #000000 !important;
   }
 }
 

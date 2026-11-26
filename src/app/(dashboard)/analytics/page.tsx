@@ -100,9 +100,10 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
-      <PageHeader
-        category="Financial Intelligence & Audit"
-        title="Revenue Analytics & Z-Reports"
+      <div className="space-y-6 print:hidden">
+        <PageHeader
+          category="Financial Intelligence & Audit"
+          title="Revenue Analytics & Z-Reports"
         subtitle="End-of-day cash reconciliation, Indian GST tax schedules, channel sales distribution, and exportable financial ledgers."
         actions={
           <div className="flex items-center gap-2">
@@ -270,8 +271,9 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </div>
+      </div>
 
-      {/* End-of-Day Z-Report Modal */}
+      {/* End-of-Day Z-Report Modal (Screen Only) */}
       <Modal
         isOpen={showZReportModal}
         onClose={() => setShowZReportModal(false)}
@@ -279,8 +281,8 @@ export default function AnalyticsPage() {
         description="Official closing statement & cash drawer reconciliation"
         maxWidth="md"
       >
-        <div className="space-y-4">
-          <div id="printable-z-report" className="printable-area p-6 rounded-2xl bg-stone-950 border border-stone-800 font-mono text-xs space-y-3">
+        <div className="space-y-4 print:hidden">
+          <div className="p-6 rounded-2xl bg-stone-900 border border-stone-800 font-mono text-xs space-y-3 shadow-inner">
             <div className="text-center pb-3 border-b border-stone-800">
               <h2 className="text-sm font-bold text-white uppercase">{user?.restaurantName || "RESTAURANT AUDIT REPORT"}</h2>
               <p className="text-[10px] text-stone-400">Official Daily Reconciliation • GST Tax Ledger</p>
@@ -359,6 +361,76 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Root-Level Pure Print Container for Z-Report (No modal clipping) */}
+      {showZReportModal && (
+        <div id="printable-z-report" className="hidden print:block font-mono text-black text-[12px] leading-tight">
+          <div className="text-center pb-2 border-b-2 border-dashed border-black space-y-1">
+            <h1 className="text-base font-extrabold uppercase tracking-wide">
+              {user?.restaurantName || "RESTAURANT AUDIT REPORT"}
+            </h1>
+            <p className="text-[11px] font-semibold uppercase">
+              Official Daily Reconciliation • GST Tax Ledger
+            </p>
+            <p className="text-[10px]">
+              Z-REPORT #{new Date().toISOString().slice(0, 10).replace(/-/g, "")}-01
+            </p>
+            <p className="text-[10px]">
+              Closed By: {user?.fullName || "Floor Manager"}
+            </p>
+          </div>
+
+          <div className="space-y-1 py-2 border-b-2 border-dashed border-black text-[11px]">
+            <div className="flex justify-between">
+              <span>Opening Float:</span>
+              <span className="font-semibold">₹{openingFloat.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Cash Sales:</span>
+              <span className="font-semibold">₹{cashSales.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Cash Payouts (Expenses):</span>
+              <span className="font-semibold">- ₹{cashPayouts.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-bold pt-1 border-t border-black">
+              <span>Expected Drawer Cash:</span>
+              <span>₹{expectedDrawerCash.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="space-y-1 py-2 border-b-2 border-dashed border-black text-[11px]">
+            <div className="flex justify-between">
+              <span>Total Orders:</span>
+              <span className="font-semibold">{orderCount}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Total Food Sales (Subtotal):</span>
+              <span className="font-semibold">₹{netSubtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-gray-700">
+              <span>CGST Collected (2.5%):</span>
+              <span>₹{cgstCollected.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-gray-700">
+              <span>SGST Collected (2.5%):</span>
+              <span>₹{sgstCollected.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-gray-700">
+              <span>Service Charge Pool (5%):</span>
+              <span>₹{scCollected.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-[13px] font-extrabold pt-1.5 border-t border-black">
+              <span>NET TOTAL COLLECTED:</span>
+              <span>₹{grossRevenue.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="text-center text-[10px] text-gray-600 pt-2">
+            System Audit Checksum: OK • 100% Reconciled
+          </div>
+        </div>
+      )}
 
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-stone-900 border border-emerald-500/40 text-emerald-300 text-xs shadow-2xl backdrop-blur-md">

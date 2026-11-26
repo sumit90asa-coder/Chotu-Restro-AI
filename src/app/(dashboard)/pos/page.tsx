@@ -273,22 +273,24 @@ function PosContent() {
 
   return (
     <div className="relative">
-      <PosTerminal
-        tables={tables}
-        dishes={dishes}
-        selectedTableId={selectedTableId}
-        onSelectTable={setSelectedTableId}
-        ledgerItems={ledgerItems}
-        onAddDish={handleAddDish}
-        onChangeQty={handleChangeQty}
-        onRemoveItem={handleRemoveItem}
-        onTransmitKot={handleTransmitKot}
-        onSendWhatsApp={() => showToast("Digital receipt link sent to customer WhatsApp!")}
-        onSettleBill={() => setShowSettleModal(true)}
-        taxConfig={taxConfig}
-        activeOrder={activeOrder}
-        onCancelOrder={handleCancelOrder}
-      />
+      <div className="print:hidden">
+        <PosTerminal
+          tables={tables}
+          dishes={dishes}
+          selectedTableId={selectedTableId}
+          onSelectTable={setSelectedTableId}
+          ledgerItems={ledgerItems}
+          onAddDish={handleAddDish}
+          onChangeQty={handleChangeQty}
+          onRemoveItem={handleRemoveItem}
+          onTransmitKot={handleTransmitKot}
+          onSendWhatsApp={() => showToast("Digital receipt link sent to customer WhatsApp!")}
+          onSettleBill={() => setShowSettleModal(true)}
+          taxConfig={taxConfig}
+          activeOrder={activeOrder}
+          onCancelOrder={handleCancelOrder}
+        />
+      </div>
 
       {/* Bill Settlement Modal */}
       <Modal

@@ -93,7 +93,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
             className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
             onClick={onCloseMobile}
           />
-          <aside className="relative flex flex-col w-72 h-full bg-[#141211] border-r border-stone-800 z-10 shadow-2xl">
+          <aside className="relative flex flex-col w-72 h-full bg-[#141211] border-r border-stone-800 z-10 shadow-2xl print:hidden">
             <div className="flex items-center justify-between px-4 h-16 border-b border-stone-800 bg-[#191615]">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#E07A5F] to-[#F4A261] flex items-center justify-center text-white font-bold shadow-md">
@@ -162,7 +162,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
 
       {/* Desktop Persistent Sidebar */}
       <aside
-        className={`hidden md:flex relative flex-col h-screen border-r border-stone-800/80 bg-[#141211] text-stone-300 transition-all duration-300 z-30 select-none ${
+        className={`hidden md:flex relative flex-col h-screen border-r border-stone-800/80 bg-[#141211] text-stone-300 transition-all duration-300 z-30 select-none print:hidden ${
           collapsed ? "w-20" : "w-64"
         }`}
       >

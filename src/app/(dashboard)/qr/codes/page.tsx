@@ -258,34 +258,36 @@ export default function QrCodesAdminPage() {
       )}
 
       {/* Page Header */}
-      <PageHeader
-        category="Digital Ordering Setup"
-        title="Table QR Codes & Print Cards"
-        subtitle="Manage dynamic, scannable QR codes connected to PostgreSQL. Guests scan to place orders that fire directly to the kitchen."
-        actions={
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={handleDownloadAllZip}
-              disabled={isZipping || tables.length === 0}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-900 border border-stone-800 hover:border-stone-700 text-stone-200 hover:text-white font-medium text-xs shadow-sm transition-all disabled:opacity-50"
-              title="Download all QR codes as a ZIP package"
-            >
-              <FolderArchive className="w-4 h-4 text-[#E07A5F]" />
-              <span>{isZipping ? "Packaging ZIP..." : "Download All (ZIP)"}</span>
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs shadow-md transition-all active:scale-95"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print All Cards</span>
-            </button>
-          </div>
-        }
-      />
+      <div className="print:hidden">
+        <PageHeader
+          category="Digital Ordering Setup"
+          title="Table QR Codes & Print Cards"
+          subtitle="Manage dynamic, scannable QR codes connected to PostgreSQL. Guests scan to place orders that fire directly to the kitchen."
+          actions={
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={handleDownloadAllZip}
+                disabled={isZipping || tables.length === 0}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-900 border border-stone-800 hover:border-stone-700 text-stone-200 hover:text-white font-medium text-xs shadow-sm transition-all disabled:opacity-50"
+                title="Download all QR codes as a ZIP package"
+              >
+                <FolderArchive className="w-4 h-4 text-[#E07A5F]" />
+                <span>{isZipping ? "Packaging ZIP..." : "Download All (ZIP)"}</span>
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs shadow-md transition-all active:scale-95"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print All Cards</span>
+              </button>
+            </div>
+          }
+        />
+      </div>
 
       {/* Stats & Domain Info Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 print:hidden">
         <div className="p-3.5 rounded-2xl bg-[#181514] border border-stone-800 flex items-center justify-between">
           <div>
             <span className="text-[11px] font-mono text-stone-400 block">Total Active Tables</span>
@@ -332,7 +334,7 @@ export default function QrCodesAdminPage() {
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 print:hidden">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-stone-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -407,7 +409,7 @@ export default function QrCodesAdminPage() {
         </div>
       ) : (
         /* Table QR Cards Grid */
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 print:grid-cols-2 print:gap-8">
+        <div id="printable-qr-grid" className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 print:grid print:grid-cols-2 print:gap-6 print:p-0 ${tableToPrint ? "print:hidden" : ""}`}>
           {filteredTables.map((table) => {
             const customerUrl = getTableMenuUrl(table);
             const qrImage = qrDataUrls[table.id];
@@ -415,18 +417,18 @@ export default function QrCodesAdminPage() {
             return (
               <div
                 key={table.id}
-                className="p-6 rounded-3xl bg-[#181514] border border-stone-800 text-center flex flex-col items-center justify-between shadow-xl relative overflow-hidden group hover:border-[#E07A5F]/50 transition-all print:border print:border-stone-300 print:bg-white print:text-stone-900 print:shadow-none"
+                className="p-6 rounded-3xl bg-[#181514] border border-stone-800 text-center flex flex-col items-center justify-between shadow-xl relative overflow-hidden group hover:border-[#E07A5F]/50 transition-all print:border-2 print:border-stone-800 print:rounded-2xl print:bg-white print:text-stone-900 print:shadow-none print:break-inside-avoid print:p-6 print:mb-4"
               >
                 {/* Header Information */}
                 <div className="w-full space-y-1 mb-3">
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-[10px] font-mono uppercase font-bold text-[#E07A5F] tracking-widest truncate max-w-[150px]">
+                    <span className="text-[10px] font-mono uppercase font-bold text-[#E07A5F] print:text-stone-700 tracking-widest truncate max-w-[150px]">
                       {user?.restaurantName || "Restaurant Table"}
                     </span>
 
                     {/* Table Status Badge */}
                     <span
-                      className={`text-[9px] uppercase font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                      className={`text-[9px] uppercase font-mono font-semibold px-2 py-0.5 rounded-full border print:hidden ${
                         table.status === "occupied"
                           ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
                           : table.status === "vacant"
@@ -440,29 +442,29 @@ export default function QrCodesAdminPage() {
                     </span>
                   </div>
 
-                  <h3 className="text-xl font-extrabold text-white print:text-stone-900 pt-1">
+                  <h3 className="text-xl font-extrabold text-white print:text-2xl print:font-black print:text-stone-900 pt-1">
                     {table.label}
                   </h3>
 
-                  <div className="flex items-center justify-center gap-2 text-xs text-stone-400 font-medium">
-                    <Users className="w-3.5 h-3.5 text-stone-500" />
+                  <div className="flex items-center justify-center gap-2 text-xs text-stone-400 print:text-stone-700 font-medium">
+                    <Users className="w-3.5 h-3.5 text-stone-500 print:text-stone-700" />
                     <span>Capacity: {table.capacity} Guests</span>
                     {table.section && (
                       <>
-                        <span className="text-stone-600">•</span>
-                        <span className="text-stone-500">{table.section}</span>
+                        <span className="text-stone-600 print:text-stone-400">•</span>
+                        <span className="text-stone-500 print:text-stone-700">{table.section}</span>
                       </>
                     )}
                   </div>
                 </div>
 
                 {/* Scannable Dynamic QR Code Container */}
-                <div className="p-4 bg-white rounded-2xl shadow-inner mb-4 flex flex-col items-center justify-center border border-stone-200 w-full max-w-[200px]">
+                <div className="p-4 bg-white rounded-2xl shadow-inner mb-4 flex flex-col items-center justify-center border border-stone-200 w-full max-w-[200px] print:border-stone-300 print:p-2 print:mb-2">
                   {qrImage ? (
                     <img
                       src={qrImage}
                       alt={`QR Code for ${table.label}`}
-                      className="w-36 h-36 object-contain"
+                      className="w-36 h-36 object-contain print:w-44 print:h-44"
                     />
                   ) : (
                     <div className="w-36 h-36 flex flex-col items-center justify-center text-stone-400 animate-pulse">
@@ -470,7 +472,7 @@ export default function QrCodesAdminPage() {
                       <span className="text-[10px] font-mono">Generating QR...</span>
                     </div>
                   )}
-                  <span className="text-[9px] font-mono text-stone-800 mt-2 uppercase font-extrabold tracking-wider">
+                  <span className="text-[9px] font-mono text-stone-800 mt-2 uppercase font-extrabold tracking-wider print:text-[10px] print:text-black">
                     SCAN TO BROWSE & ORDER
                   </span>
                 </div>
@@ -597,9 +599,9 @@ export default function QrCodesAdminPage() {
         </div>
       )}
 
-      {/* SINGLE PRINT PREVIEW MODAL */}
+      {/* SINGLE PRINT PREVIEW MODAL (Screen Only) */}
       {tableToPrint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
           <div className="bg-[#181413] border border-stone-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-stone-800 pb-3">
               <h3 className="text-sm font-bold text-white font-mono">Print Table Card</h3>
@@ -612,7 +614,7 @@ export default function QrCodesAdminPage() {
             </div>
 
             {/* Printable Preview Card */}
-            <div className="printable-area p-6 rounded-2xl bg-white text-stone-950 text-center space-y-3 shadow-md border border-stone-300">
+            <div className="p-6 rounded-2xl bg-white text-stone-950 text-center space-y-3 shadow-md border border-stone-300">
               <div>
                 <span className="text-[10px] font-mono uppercase font-bold text-[#E07A5F] tracking-widest block">
                   {user?.restaurantName || "Restaurant Table"}
@@ -659,6 +661,43 @@ export default function QrCodesAdminPage() {
                 <Printer className="w-3.5 h-3.5" />
                 <span>Print Card</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Root-Level Pure Print Container for Single Table Card (No modal clipping) */}
+      {tableToPrint && (
+        <div id="printable-single-qr" className="hidden print:block">
+          <div className="p-8 rounded-3xl bg-white text-stone-950 text-center space-y-4 border-2 border-stone-900 max-w-sm mx-auto shadow-none">
+            <div className="space-y-1">
+              <span className="text-xs font-mono uppercase font-bold text-[#E07A5F] tracking-widest block">
+                {user?.restaurantName || "Restaurant Table"}
+              </span>
+              <h2 className="text-3xl font-black text-stone-900 pt-1">{tableToPrint.label}</h2>
+              <p className="text-xs text-stone-700 font-semibold">Table for {tableToPrint.capacity} Guests</p>
+            </div>
+
+            {qrDataUrls[tableToPrint.id] && (
+              <div className="p-4 bg-white rounded-2xl inline-block border-2 border-stone-300">
+                <img
+                  src={qrDataUrls[tableToPrint.id]}
+                  alt={`QR for ${tableToPrint.label}`}
+                  className="w-48 h-48 object-contain mx-auto"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1 pt-1">
+              <span className="text-sm font-extrabold text-stone-900 block font-mono uppercase tracking-wider">
+                Scan to View Menu & Order
+              </span>
+              <p className="text-[11px] text-stone-700 font-mono">
+                No app required • Point mobile camera to scan
+              </p>
+              <p className="text-[9px] text-stone-500 font-mono pt-2 border-t border-stone-200">
+                Powered by Chotu Restro AI
+              </p>
             </div>
           </div>
         </div>
