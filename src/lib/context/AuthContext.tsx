@@ -70,6 +70,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
+
+    // Cross-tab logout synchronization listener
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "chotu_auth_logout_event" || (e.key === "chotu_auth_token" && !e.newValue)) {
+        setToken(null);
+        setUser(null);
+        setAuthToken(null);
+        if (typeof window !== "undefined") {
+          const currentPath = window.location.pathname;
+          if (
+            currentPath !== "/" &&
+            currentPath !== "/landing" &&
+            !currentPath.startsWith("/login") &&
+            !currentPath.startsWith("/register") &&
+            !currentPath.startsWith("/qr/")
+          ) {
+            window.location.href = "/login";
+          }
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const login = async (identifier: string, password: string): Promise<{ success: boolean; error?: string }> => {
@@ -171,7 +195,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await apiFetch("/auth/logout", { method: "POST" });
+    } catch {
+      // Best-effort server token revocation
+    }
     setToken(null);
     setUser(null);
     setAuthToken(null);
@@ -179,6 +208,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem("chotu_auth_token");
       localStorage.removeItem("chotu_user_session");
       document.cookie = "chotu_auth_token=; path=/; max-age=0; SameSite=Lax";
+      try {
+        localStorage.setItem("chotu_auth_logout_event", Date.now().toString());
+      } catch {}
       window.location.href = "/login";
     }
   };

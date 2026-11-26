@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.main import app
 from app.database.session import Base, get_db
 from app.initial_data import init_demo_db
-from app.core.security import get_password_hash, create_access_token
+from app.core.security import get_password_hash, create_access_token, clear_revoked_tokens
 from app.models.user import User
 from app.core.permissions import UserRole
 
@@ -36,6 +36,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 @pytest.fixture(scope="function")
 def db_session(monkeypatch):
+    clear_revoked_tokens()
     # Mock get_password_hash in initial_data to use precomputed hash
     monkeypatch.setattr("app.initial_data.get_password_hash", lambda _: CACHED_HASH)
     

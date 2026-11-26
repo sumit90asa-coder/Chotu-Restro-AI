@@ -1,11 +1,33 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/pos",
+  "/tables",
+  "/orders",
+  "/kds",
+  "/delivery",
+  "/menu",
+  "/inventory",
+  "/customers",
+  "/staff",
+  "/expenses",
+  "/ai",
+  "/insights",
+  "/analytics",
+  "/marketing",
+  "/settings",
+];
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Intercept and protect all dashboard routes
-  if (pathname.startsWith("/dashboard")) {
+  const isProtected = PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+
+  if (isProtected) {
     const tokenCookie = request.cookies.get("chotu_auth_token");
     const token = tokenCookie?.value;
 
@@ -24,12 +46,19 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/pos/:path*",
-    "/kds/:path*",
+    "/tables/:path*",
     "/orders/:path*",
+    "/kds/:path*",
+    "/delivery/:path*",
     "/menu/:path*",
     "/inventory/:path*",
-    "/analytics/:path*",
+    "/customers/:path*",
     "/staff/:path*",
+    "/expenses/:path*",
+    "/ai/:path*",
+    "/insights/:path*",
+    "/analytics/:path*",
+    "/marketing/:path*",
     "/settings/:path*",
   ],
 };

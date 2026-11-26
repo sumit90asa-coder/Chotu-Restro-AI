@@ -89,18 +89,28 @@ def get_customer_order_history(
     ).order_by(Order.created_at.desc()).all()
     return orders
 
-@router.post("/{customer_id}/loyalty", response_model=LoyaltyTransactionResponse)
+@router.post("/{customer_id}/loyalty", response_model=CustomerResponse)
 def adjust_customer_loyalty(
     customer_id: str,
     req: LoyaltyAdjustRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(check_permission("crm:points"))
 ):
-    tx = CRMService.adjust_points(
+    note = req.notes or req.reason or "Manual loyalty points adjustment"
+    tx_type = req.transaction_type or LoyaltyTxType.ADJUSTMENT
+    idemp = req.idempotency_key or f"loyalty-{customer_id}-{uuid.uuid4().hex[:8]}"
+
+    CRMService.adjust_points(
         db, customer_id, current_user.restaurant_id,
-        req.transaction_type, req.points, req.notes, req.idempotency_key
+        tx_type, req.points, note, idemp
     )
-    return tx
+    cust = db.query(Customer).filter(
+        Customer.id == customer_id,
+        Customer.restaurant_id == current_user.restaurant_id
+    ).first()
+    if not cust:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return cust
 
 @router.post("/{customer_id}/feedback", response_model=FeedbackResponse)
 def submit_customer_feedback(

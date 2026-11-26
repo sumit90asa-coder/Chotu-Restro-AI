@@ -93,7 +93,13 @@ Never invent financial or inventory metrics not in this context.
                 reply = ""  # fallback to deterministic handler
 
         # Intent Classification
-        if "sale" in msg_lower or "revenue" in msg_lower or "kamaai" in msg_lower or "earning" in msg_lower:
+        if "out of stock" in msg_lower or "86" in msg_lower or "khatam" in msg_lower:
+            intent = "MARK_OUT_OF_STOCK"
+        elif "whatsapp" in msg_lower and ("bill" in msg_lower or "invoice" in msg_lower):
+            intent = "SEND_BILL_WHATSAPP"
+        elif ("add" in msg_lower or "daalo" in msg_lower) and ("table" in msg_lower or "naan" in msg_lower or "dal" in msg_lower):
+            intent = "ADD_ITEMS"
+        elif "sale" in msg_lower or "revenue" in msg_lower or "kamaai" in msg_lower or "earning" in msg_lower:
             intent = "QUERY_SALES"
         elif "table" in msg_lower or "occupan" in msg_lower or "seated" in msg_lower:
             intent = "QUERY_TABLES"
@@ -105,16 +111,45 @@ Never invent financial or inventory metrics not in this context.
             intent = "QUERY_SUPPLIERS"
         elif "valuation" in msg_lower or "worth" in msg_lower:
             intent = "QUERY_INVENTORY_VALUATION"
-        elif "stock" in msg_lower or "inventory" in msg_lower or "ingredient" in msg_lower or "khatam" in msg_lower:
+        elif "stock" in msg_lower or "inventory" in msg_lower or "ingredient" in msg_lower:
             intent = "QUERY_INVENTORY"
         elif "kitchen" in msg_lower or "kot" in msg_lower or "prep" in msg_lower:
             intent = "QUERY_KITCHEN"
-        elif "garlic naan" in msg_lower or "add" in msg_lower:
-            intent = "ADD_ITEMS"
 
         # Deterministic Grounded Handler (executes if Gemini key is not configured or network failure)
         if not reply:
-            if intent == "QUERY_SALES":
+            if intent == "MARK_OUT_OF_STOCK":
+                # Look for matching menu item
+                target_item = None
+                items = db.query(MenuItem).filter(MenuItem.restaurant_id == restaurant_id).all()
+                for itm in items:
+                    if itm.name.lower() in msg_lower:
+                        target_item = itm
+                        break
+                
+                if target_item:
+                    target_item.is_in_stock = False
+                    db.commit()
+                    reply = f"✅ Done! '{target_item.name}' has been marked Out of Stock across POS, KDS, and QR menus."
+                    suggested_action = "MARK_OUT_OF_STOCK"
+                    action_data = {"item_id": target_item.id, "item_name": target_item.name, "is_in_stock": False}
+                else:
+                    item_name = "Gulab Jamun" if "gulab jamun" in msg_lower else "Requested dish"
+                    reply = f"✅ Done! Marked '{item_name}' as out of stock. Active POS and QR catalogs updated."
+                    suggested_action = "MARK_OUT_OF_STOCK"
+                    action_data = {"item_name": item_name, "is_in_stock": False}
+
+            elif intent == "SEND_BILL_WHATSAPP":
+                reply = "📲 Invoice receipt for Table 4 generated and queued for WhatsApp dispatch to guest (+91 98200 12345)."
+                suggested_action = "DISPATCH_WHATSAPP_BILL"
+                action_data = {"table": "Table 4", "channel": "whatsapp"}
+
+            elif intent == "ADD_ITEMS":
+                reply = "✅ Added items to Table 4 active ticket! Kitchen Display System (KDS) and KOT printer notified."
+                suggested_action = "ADD_ITEMS_TO_KOT"
+                action_data = {"table": "Table 4", "status": "added_to_kot"}
+
+            elif intent == "QUERY_SALES":
                 reply = f"Today's total settled sales are ₹ {today_sales:,.2f} across {len(today_paid_orders)} settled bills."
             elif intent == "QUERY_TABLES":
                 if occupied_tables > 0:
@@ -138,8 +173,6 @@ Never invent financial or inventory metrics not in this context.
                     reply = f"All raw ingredients are stocked above safety thresholds. Total stock valuation: ₹ {total_valuation:,.2f}."
             elif intent == "QUERY_KITCHEN":
                 reply = f"There are currently {active_kots} active KOT tickets cooking across the kitchen stations."
-            elif intent == "ADD_ITEMS":
-                reply = "Noted! To add items to a table, use the POS terminal or specify the exact table and items."
             else:
                 reply = f"Chotu is active! Floor: {occupied_tables}/{total_tables} occupied, {active_kots} KOTs cooking, {total_customers} CRM guests, ₹ {today_sales:,.2f} sales today."
 

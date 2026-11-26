@@ -5,12 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.database.session import get_db
-from app.core.security import verify_password, create_access_token, get_password_hash
+from app.core.security import verify_password, create_access_token, get_password_hash, revoke_token
 from app.core.permissions import UserRole
 from app.models.user import User
 from app.models.restaurant import Restaurant
 from app.schemas.auth import LoginRequest, RegisterRequest, RegisterResponse, Token, UserResponse, UserCreate
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, oauth2_scheme
 
 router = APIRouter()
 
@@ -198,10 +198,14 @@ def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 @router.post("/logout")
-def logout(current_user: User = Depends(get_current_user)):
+def logout(
+    current_user: User = Depends(get_current_user),
+    token: str = Depends(oauth2_scheme)
+):
     """Explicitly terminate/revoke active staff session."""
+    revoke_token(token)
     return {
-        "message": "Session terminated successfully",
+        "message": "Session terminated and revoked successfully",
         "user_id": current_user.id,
         "status": "logged_out"
     }

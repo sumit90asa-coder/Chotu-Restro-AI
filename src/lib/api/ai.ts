@@ -2,6 +2,9 @@ import { apiFetch } from "./client";
 
 export interface AIChatResponse {
   reply: string;
+  intent?: string;
+  suggested_action?: string;
+  action_data?: Record<string, any>;
   action_taken?: {
     action: string;
     table_id?: string;

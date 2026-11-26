@@ -12,21 +12,35 @@ from app.schemas.analytics import AnalyticsOverview, ChannelSalesSummary, DayTra
 
 class AnalyticsService:
     @staticmethod
-    def get_overview(db: Session, restaurant_id: str) -> AnalyticsOverview:
+    def get_overview(db: Session, restaurant_id: str, period: str = "today") -> AnalyticsOverview:
         now = datetime.now(timezone.utc)
-        start_of_today = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc)
         
-        # 1. Today's Revenue (Completed and paid orders)
-        today_paid_orders = db.query(Order).filter(
+        # Calculate date boundaries based on requested period filter
+        if period == "yesterday":
+            start_date = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc) - timedelta(days=1)
+            end_date = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc)
+        elif period == "last_7_days":
+            start_date = now - timedelta(days=7)
+            end_date = now
+        elif period == "this_month":
+            start_date = datetime(now.year, now.month, 1, 0, 0, 0, tzinfo=timezone.utc)
+            end_date = now
+        else: # "today"
+            start_date = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc)
+            end_date = now
+        
+        # 1. Period Revenue (Legitimate completed and paid orders)
+        period_paid_orders = db.query(Order).filter(
             Order.restaurant_id == restaurant_id,
             Order.payment_status == PaymentStatus.PAID,
-            Order.created_at >= start_of_today
+            Order.created_at >= start_date,
+            Order.created_at <= end_date
         ).all()
         
-        today_rev = sum((o.total_amount for o in today_paid_orders), Decimal("0.00"))
-        completed_count = len(today_paid_orders)
+        period_rev = sum((o.total_amount for o in period_paid_orders), Decimal("0.00"))
+        completed_count = len(period_paid_orders)
 
-        # 2. Table Occupancy
+        # 2. Table Occupancy (Real-time snapshot)
         total_tables = db.query(DiningTable).filter(DiningTable.restaurant_id == restaurant_id).count()
         occupied_tables = db.query(DiningTable).filter(
             DiningTable.restaurant_id == restaurant_id,
@@ -41,41 +55,41 @@ class AnalyticsService:
         ).count()
 
         # 4. Kitchen Prep Pace
-        bumped_kots_today = db.query(KOT).filter(
+        bumped_kots = db.query(KOT).filter(
             KOT.restaurant_id == restaurant_id,
             KOT.status == KOTStatus.BUMPED,
-            KOT.completed_at >= start_of_today
+            KOT.completed_at >= start_date,
+            KOT.completed_at <= end_date
         ).all()
         
-        if bumped_kots_today:
-            prep_durations = [(k.completed_at - k.created_at).total_seconds() / 60.0 for k in bumped_kots_today if k.completed_at]
+        if bumped_kots:
+            prep_durations = [(k.completed_at - k.created_at).total_seconds() / 60.0 for k in bumped_kots if k.completed_at]
             prep_pace = sum(prep_durations) / len(prep_durations) if prep_durations else 8.2
         else:
             prep_pace = 8.2
 
         # 5. Channel Sales Mix
-        all_orders = db.query(Order).filter(
+        all_period_orders = db.query(Order).filter(
             Order.restaurant_id == restaurant_id,
-            Order.created_at >= start_of_today
+            Order.created_at >= start_date,
+            Order.created_at <= end_date
         ).all()
         
-        store_orders = [o for o in all_orders if o.mode == OrderMode.DINE_IN or o.mode == OrderMode.TAKEAWAY]
-        agg_orders = [o for o in all_orders if o.mode in (OrderMode.ZOMATO, OrderMode.SWIGGY, OrderMode.UBEREATS, OrderMode.DOORDASH)]
-        site_orders = [o for o in all_orders if o.mode == OrderMode.DELIVERY]
+        store_orders = [o for o in all_period_orders if o.mode in (OrderMode.DINE_IN, OrderMode.TAKEAWAY)]
+        agg_orders = [o for o in all_period_orders if o.mode in (OrderMode.ZOMATO, OrderMode.SWIGGY, OrderMode.UBEREATS, OrderMode.DOORDASH)]
+        site_orders = [o for o in all_period_orders if o.mode == OrderMode.DELIVERY]
 
-        total_orders_count = max(len(all_orders), 1)
-        store_rev = sum((o.total_amount for o in store_orders), Decimal("0.00"))
-        agg_rev = sum((o.total_amount for o in agg_orders), Decimal("0.00"))
-        site_rev = sum((o.total_amount for o in site_orders), Decimal("0.00"))
+        store_rev = sum((o.total_amount for o in store_orders if o.payment_status == PaymentStatus.PAID), Decimal("0.00"))
+        agg_rev = sum((o.total_amount for o in agg_orders if o.payment_status == PaymentStatus.PAID), Decimal("0.00"))
+        site_rev = sum((o.total_amount for o in site_orders if o.payment_status == PaymentStatus.PAID), Decimal("0.00"))
         gross_rev = store_rev + agg_rev + site_rev
-        if gross_rev == Decimal("0.00"):
-            gross_rev = Decimal("1.00")
+        denom_rev = gross_rev if gross_rev > Decimal("0.00") else Decimal("1.00")
 
         channel_sales = [
             ChannelSalesSummary(
                 channel="store",
                 label="In-Store Sales (Dine-In + Counter)",
-                percentage=round(float(store_rev / gross_rev * 100), 1),
+                percentage=round(float(store_rev / denom_rev * 100), 1) if gross_rev > 0 else 0.0,
                 revenue=store_rev,
                 order_count=len(store_orders),
                 average_order_value=round(store_rev / max(len(store_orders), 1), 2)
@@ -83,7 +97,7 @@ class AnalyticsService:
             ChannelSalesSummary(
                 channel="aggregators",
                 label="Online Aggregators (Zomato + Swiggy)",
-                percentage=round(float(agg_rev / gross_rev * 100), 1),
+                percentage=round(float(agg_rev / denom_rev * 100), 1) if gross_rev > 0 else 0.0,
                 revenue=agg_rev,
                 order_count=len(agg_orders),
                 average_order_value=round(agg_rev / max(len(agg_orders), 1), 2)
@@ -91,38 +105,65 @@ class AnalyticsService:
             ChannelSalesSummary(
                 channel="site",
                 label="Direct Website & QR Ordering",
-                percentage=round(float(site_rev / gross_rev * 100), 1),
+                percentage=round(float(site_rev / denom_rev * 100), 1) if gross_rev > 0 else 0.0,
                 revenue=site_rev,
                 order_count=len(site_orders),
                 average_order_value=round(site_rev / max(len(site_orders), 1), 2)
             )
         ]
 
-        # 6. Weekly Traffic Summary (Past 7 days)
-        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        # 6. Weekly Traffic Summary (Past 7 calendar days grounded in database)
         weekly_traffic = []
         for i in range(7):
-            day_orders = db.query(Order).filter(Order.restaurant_id == restaurant_id).limit(10).all()
+            day_ref = now - timedelta(days=6-i)
+            day_start_dt = datetime(day_ref.year, day_ref.month, day_ref.day, 0, 0, 0, tzinfo=timezone.utc)
+            day_end_dt = datetime(day_ref.year, day_ref.month, day_ref.day, 23, 59, 59, tzinfo=timezone.utc)
+            day_name = day_ref.strftime("%A")
+            
+            day_orders = db.query(Order).filter(
+                Order.restaurant_id == restaurant_id,
+                Order.payment_status == PaymentStatus.PAID,
+                Order.created_at >= day_start_dt,
+                Order.created_at <= day_end_dt
+            ).all()
+            
+            d_rev = sum((o.total_amount for o in day_orders), Decimal("0.00"))
+            d_store = len([o for o in day_orders if o.mode in (OrderMode.DINE_IN, OrderMode.TAKEAWAY)])
+            d_agg = len([o for o in day_orders if o.mode in (OrderMode.ZOMATO, OrderMode.SWIGGY, OrderMode.UBEREATS, OrderMode.DOORDASH)])
+            d_site = len([o for o in day_orders if o.mode == OrderMode.DELIVERY])
+
             weekly_traffic.append(
                 DayTrafficSummary(
-                    day=days[i],
-                    total_orders=len(day_orders) + (i * 12) + 20,
-                    store_orders=len(store_orders) + (i * 7) + 10,
-                    aggregator_orders=len(agg_orders) + (i * 4) + 6,
-                    site_orders=len(site_orders) + (i * 2) + 4,
-                    top_source="In-Store Dining" if i in (4, 5) else "Zomato Surge",
-                    revenue=Decimal(str((len(day_orders) + (i * 12) + 20) * 540)),
-                    is_peak_day=(i == 5)
+                    day=day_name,
+                    total_orders=len(day_orders),
+                    store_orders=d_store,
+                    aggregator_orders=d_agg,
+                    site_orders=d_site,
+                    top_source="In-Store Dining" if d_store >= max(d_agg, d_site, 1) else "Online Orders",
+                    revenue=d_rev,
+                    is_peak_day=False
                 )
             )
 
-        # 7. Top Selling Dishes
+        if weekly_traffic:
+            max_r = max(d.revenue for d in weekly_traffic)
+            if max_r > Decimal("0.00"):
+                for d in weekly_traffic:
+                    if d.revenue == max_r:
+                        d.is_peak_day = True
+                        break
+
+        # 7. Top Selling Dishes in the period
         top_items_query = db.query(
             OrderItem.menu_item_id,
             OrderItem.name,
             func.sum(OrderItem.quantity).label("total_qty"),
             func.sum(OrderItem.price * OrderItem.quantity).label("total_rev")
-        ).join(Order).filter(Order.restaurant_id == restaurant_id).group_by(OrderItem.menu_item_id, OrderItem.name).order_by(func.sum(OrderItem.quantity).desc()).limit(5).all()
+        ).join(Order).filter(
+            Order.restaurant_id == restaurant_id,
+            Order.created_at >= start_date,
+            Order.created_at <= end_date
+        ).group_by(OrderItem.menu_item_id, OrderItem.name).order_by(func.sum(OrderItem.quantity).desc()).limit(5).all()
 
         top_dishes = [
             TopSellingDish(
@@ -138,7 +179,7 @@ class AnalyticsService:
         low_stock = InventoryService.get_low_stock_alerts(db, restaurant_id)
 
         return AnalyticsOverview(
-            today_revenue=today_rev,
+            today_revenue=period_rev,
             revenue_growth_percent=14.2,
             occupied_tables=occupied_tables,
             total_tables=total_tables,

@@ -35,13 +35,22 @@ export const IntelligenceHub: React.FC = () => {
       .catch((err) => console.warn("Analytics API fallback:", err));
   }, []);
 
-  // Live or fallback metrics
-  const todayRevenue = analytics ? analytics.today_revenue : 42850;
-  const occupiedTables = analytics ? analytics.occupied_tables : 8;
-  const totalTables = analytics ? analytics.total_tables : 14;
-  const occupancyRate = totalTables > 0 ? ((occupiedTables / totalTables) * 100).toFixed(1) : "57.1";
-  const prepPace = analytics ? `${analytics.avg_prep_time_minutes}m 12s` : "8m 14s";
-  const activeKots = analytics ? analytics.active_kot_count : 6;
+  // Live metrics grounded in database
+  const todayRevenue = analytics ? Number(analytics.today_revenue || 0) : 0;
+  const occupiedTables = analytics ? (analytics.occupied_tables || 0) : 0;
+  const totalTables = analytics ? (analytics.total_tables || 0) : 0;
+  const occupancyRate = totalTables > 0 ? ((occupiedTables / totalTables) * 100).toFixed(1) : "0.0";
+  const prepPace = analytics ? `${analytics.prep_pace_minutes || analytics.avg_prep_time_minutes || 8.2}m` : "8.2m";
+  const activeKots = analytics ? (analytics.active_kots ?? analytics.active_kot_count ?? 0) : 0;
+
+  // Use live channel sales or fallback structure
+  const channelSales = (analytics?.channel_sales && analytics.channel_sales.length > 0)
+    ? analytics.channel_sales
+    : CHANNEL_SALES_SPLIT.map(c => ({ ...c, revenue: 0, order_count: 0, percentage: 0 }));
+
+  const weeklyTraffic = (analytics?.weekly_traffic && analytics.weekly_traffic.length > 0)
+    ? analytics.weekly_traffic
+    : WEEKLY_TRAFFIC_SOURCES;
 
   // Calculate totals for promotions
   const totalDiscountSpent = PROMOTION_IMPACTS.reduce((acc, p) => acc + p.discountSpent, 0);
@@ -49,59 +58,59 @@ export const IntelligenceHub: React.FC = () => {
   const blendedRoi = (totalPromoRevenue / totalDiscountSpent).toFixed(1);
 
   return (
-    <div className="flex-1 p-6 lg:p-10 bg-canvas space-y-10 max-w-7xl mx-auto w-full">
+    <div className="flex-1 p-6 lg:p-10 bg-[#110E0D] text-stone-100 space-y-10 max-w-7xl mx-auto w-full">
       {/* Header */}
-      <div className="border-b border-border pb-5 flex items-center justify-between flex-wrap gap-4">
+      <div className="border-b border-stone-800 pb-5 flex items-center justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-ink tracking-tight">
+            <h2 className="text-xl font-bold text-white tracking-tight">
               Operational Intelligence &amp; Economics
             </h2>
-            <span className="w-2 h-2 rounded-full bg-dietary-veg"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           </div>
-          <p className="text-xs text-ink-secondary mt-1">
+          <p className="text-xs text-stone-400 mt-1">
             Channel revenue attribution, day-of-week traffic dynamics, and discount margin health
           </p>
         </div>
 
-        <div className="text-xs text-ink-secondary flex items-center gap-1.5 border border-border bg-canvas-card px-3 py-1.5 font-mono">
-          <Cpu className="w-3.5 h-3.5 text-accent" />
+        <div className="text-xs text-stone-400 flex items-center gap-1.5 border border-stone-800 bg-[#181514] px-3 py-1.5 font-mono rounded-xl">
+          <Cpu className="w-3.5 h-3.5 text-[#E07A5F]" />
           <span>Chotu Copilot Active • Real-time Sync</span>
         </div>
       </div>
 
       {/* Top 4 Key Business Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-canvas-card border border-border p-5 space-y-1">
-          <div className="text-xs font-mono text-ink-secondary uppercase">Today&apos;s Revenue</div>
-          <div className="text-2xl font-bold font-mono text-ink">₹ {todayRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-          <div className="text-xs text-dietary-veg font-medium flex items-center gap-1">
+        <div className="bg-[#181514] border border-stone-800 rounded-2xl p-5 space-y-1">
+          <div className="text-xs font-mono text-stone-400 uppercase">Period Revenue</div>
+          <div className="text-2xl font-bold font-mono text-white">₹ {todayRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div className="text-xs text-emerald-400 font-medium flex items-center gap-1">
             <TrendingUp className="w-3 h-3" />
-            <span>+14.2% vs 7-day average</span>
+            <span>Database settled revenue</span>
           </div>
         </div>
 
-        <div className="bg-canvas-card border border-border p-5 space-y-1">
-          <div className="text-xs font-mono text-ink-secondary uppercase">Table Occupancy</div>
-          <div className="text-2xl font-bold font-mono text-ink">
-            {occupiedTables} <span className="text-sm font-normal text-ink-secondary">/ {totalTables} Tables</span>
+        <div className="bg-[#181514] border border-stone-800 rounded-2xl p-5 space-y-1">
+          <div className="text-xs font-mono text-stone-400 uppercase">Table Occupancy</div>
+          <div className="text-2xl font-bold font-mono text-white">
+            {occupiedTables} <span className="text-sm font-normal text-stone-400">/ {totalTables} Tables</span>
           </div>
-          <div className="text-xs text-ink-secondary">{occupancyRate}% dine-in capacity</div>
+          <div className="text-xs text-stone-400">{occupancyRate}% dine-in capacity</div>
         </div>
 
-        <div className="bg-canvas-card border border-border p-5 space-y-1">
-          <div className="text-xs font-mono text-ink-secondary uppercase">Kitchen Prep Pace</div>
-          <div className="text-2xl font-bold font-mono text-ink">{prepPace}</div>
-          <div className="text-xs text-ink-secondary flex items-center gap-1">
+        <div className="bg-[#181514] border border-stone-800 rounded-2xl p-5 space-y-1">
+          <div className="text-xs font-mono text-stone-400 uppercase">Kitchen Prep Pace</div>
+          <div className="text-2xl font-bold font-mono text-white">{prepPace}</div>
+          <div className="text-xs text-stone-400 flex items-center gap-1">
             <Clock className="w-3 h-3" />
             <span>Target: &lt;10 mins</span>
           </div>
         </div>
 
-        <div className="bg-canvas-card border border-border p-5 space-y-1">
-          <div className="text-xs font-mono text-ink-secondary uppercase">Active KOT Tickets</div>
-          <div className="text-2xl font-bold font-mono text-ink">{activeKots} Queued</div>
-          <div className="text-xs text-accent">Real-time KDS active tickets</div>
+        <div className="bg-[#181514] border border-stone-800 rounded-2xl p-5 space-y-1">
+          <div className="text-xs font-mono text-stone-400 uppercase">Active KOT Tickets</div>
+          <div className="text-2xl font-bold font-mono text-white">{activeKots} Queued</div>
+          <div className="text-xs text-[#E07A5F]">Real-time KDS active tickets</div>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import { Coupon } from "@/types/restaurant";
@@ -14,7 +14,9 @@ import {
   MessageSquare, 
   Copy,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  Power,
+  Trash2
 } from "lucide-react";
 
 const INITIAL_COUPONS: Coupon[] = [
@@ -70,6 +72,15 @@ export default function MarketingPage() {
   });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("chotu_coupons");
+      if (saved) {
+        setCoupons(JSON.parse(saved));
+      }
+    } catch {}
+  }, []);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -91,7 +102,11 @@ export default function MarketingPage() {
       expiresAt: "31-Dec-2026",
       isActive: true,
     };
-    setCoupons([added, ...coupons]);
+    const updated = [added, ...coupons];
+    setCoupons(updated);
+    try {
+      localStorage.setItem("chotu_coupons", JSON.stringify(updated));
+    } catch {}
     showToast(`Promo code ${added.code} created and live!`);
     setShowAddModal(false);
     setNewCoupon({
@@ -102,6 +117,30 @@ export default function MarketingPage() {
       minOrderValue: "",
       maxDiscount: "",
     });
+  };
+
+  const handleToggleStatus = (couponId: string) => {
+    const updated = coupons.map((c) => {
+      if (c.id === couponId) {
+        const next = !c.isActive;
+        showToast(`Promo code ${c.code} is now ${next ? "ACTIVE" : "DISABLED"}`);
+        return { ...c, isActive: next };
+      }
+      return c;
+    });
+    setCoupons(updated);
+    try {
+      localStorage.setItem("chotu_coupons", JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleDeleteCoupon = (couponId: string) => {
+    const updated = coupons.filter((c) => c.id !== couponId);
+    setCoupons(updated);
+    showToast("Promo code deleted");
+    try {
+      localStorage.setItem("chotu_coupons", JSON.stringify(updated));
+    } catch {}
   };
 
   const copyCode = (code: string) => {
@@ -183,15 +222,31 @@ export default function MarketingPage() {
         {coupons.map((coupon) => (
           <div
             key={coupon.id}
-            className="p-5 rounded-2xl bg-[#181514] border border-stone-800 flex flex-col justify-between hover:border-stone-700 transition-all shadow-lg relative overflow-hidden"
+            className={`p-5 rounded-2xl bg-[#181514] border transition-all shadow-lg relative overflow-hidden flex flex-col justify-between ${
+              coupon.isActive
+                ? "border-stone-800 hover:border-stone-700"
+                : "border-stone-800/40 opacity-60 bg-stone-950/60"
+            }`}
           >
             <div>
               <div className="flex items-center justify-between mb-3">
-                <span className="px-3 py-1 rounded-xl bg-[#E07A5F]/20 border border-[#E07A5F]/40 text-[#F4A261] font-mono font-bold text-sm tracking-wider">
+                <span
+                  className={`px-3 py-1 rounded-xl font-mono font-bold text-sm tracking-wider ${
+                    coupon.isActive
+                      ? "bg-[#E07A5F]/20 border border-[#E07A5F]/40 text-[#F4A261]"
+                      : "bg-stone-800 border border-stone-700 text-stone-500 line-through"
+                  }`}
+                >
                   {coupon.code}
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold uppercase font-mono">
-                  Active
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase font-mono border ${
+                    coupon.isActive
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      : "bg-stone-800 text-stone-400 border-stone-700"
+                  }`}
+                >
+                  {coupon.isActive ? "Active" : "Disabled"}
                 </span>
               </div>
 
@@ -200,7 +255,7 @@ export default function MarketingPage() {
               <div className="space-y-1.5 text-[11px] text-stone-400 mb-4">
                 <div className="flex justify-between">
                   <span>Discount:</span>
-                  <span className="text-emerald-400 font-bold">
+                  <span className={coupon.isActive ? "text-emerald-400 font-bold" : "text-stone-500"}>
                     {coupon.discountType === "percentage" ? `${coupon.discountValue}% OFF` : `₹${coupon.discountValue} FLAT`}
                   </span>
                 </div>
@@ -217,13 +272,33 @@ export default function MarketingPage() {
 
             <div className="flex items-center justify-between pt-3 border-t border-stone-800">
               <span className="text-[10px] text-stone-500 font-mono">Expires: {coupon.expiresAt}</span>
-              <button
-                onClick={() => copyCode(coupon.code)}
-                className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-stone-800 text-stone-300 transition-colors"
-                title="Copy Code"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleToggleStatus(coupon.id)}
+                  className={`p-1.5 rounded-lg border transition-colors ${
+                    coupon.isActive
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                      : "bg-stone-800 border-stone-700 text-stone-400 hover:bg-stone-700"
+                  }`}
+                  title={coupon.isActive ? "Disable Promo Code" : "Enable Promo Code"}
+                >
+                  <Power className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => copyCode(coupon.code)}
+                  className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-stone-800 text-stone-300 transition-colors"
+                  title="Copy Code"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => handleDeleteCoupon(coupon.id)}
+                  className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-rose-500/20 hover:text-rose-400 text-stone-400 transition-colors"
+                  title="Delete Promo Code"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         ))}

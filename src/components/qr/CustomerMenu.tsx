@@ -22,7 +22,7 @@ import {
   Eye,
   FileText
 } from "lucide-react";
-import { submitQROrder, fetchQRMenu, QRMenuResponse } from "@/lib/api/qr";
+import { submitQROrder, fetchQRMenu, fetchCurrentQROrder, QRMenuResponse } from "@/lib/api/qr";
 import { mapBackendMenuItem } from "@/lib/api/menu";
 
 interface CartItem {
@@ -82,7 +82,10 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
     setLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchQRMenu(token);
+      const [data, activeOrd] = await Promise.all([
+        fetchQRMenu(token),
+        fetchCurrentQROrder(token).catch(() => null),
+      ]);
       if (data && Array.isArray(data.items)) {
         setDishes(data.items.map(mapBackendMenuItem));
         if (onMenuLoaded) {
@@ -90,6 +93,31 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
         }
       } else {
         setFetchError("No menu items found for this restaurant.");
+      }
+
+      if (activeOrd && activeOrd.id) {
+        const confirmed: ConfirmedOrder = {
+          tokenNumber: activeOrd.token_number || activeOrd.id,
+          orderNumber: activeOrd.order_number || `${tableLabel}`,
+          totalAmount: Number(activeOrd.total_amount || 0),
+          itemsCount: activeOrd.items ? activeOrd.items.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0) : 0,
+          placedAt: activeOrd.created_at ? new Date(activeOrd.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Active",
+          status: "preparing",
+        };
+        setConfirmedOrder(confirmed);
+        try {
+          localStorage.setItem(`chotu_qr_order_${token}`, JSON.stringify(confirmed));
+        } catch {}
+        if (onMenuLoaded && data) {
+          onMenuLoaded({ ...data, table_status: "occupied" });
+        }
+      } else {
+        try {
+          const cached = localStorage.getItem(`chotu_qr_order_${token}`);
+          if (cached) {
+            setConfirmedOrder(JSON.parse(cached));
+          }
+        } catch {}
       }
     } catch (err: any) {
       console.error("QR Menu Fetch Error:", err);
@@ -189,19 +217,35 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
         captain_notes: `Customer self-order via Table QR`,
       });
 
+      const itemsCount = res.items
+        ? res.items.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0)
+        : totalItemsCount;
+
       const confirmed: ConfirmedOrder = {
         tokenNumber: res.token_number || `IND-${Date.now().toString().slice(-6)}`,
         orderNumber: res.order_number || `${tableLabel}-1`,
         totalAmount: Number(res.total_amount || grandTotal),
-        itemsCount: totalItemsCount,
+        itemsCount: itemsCount,
         placedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         status: "preparing",
       };
 
       setConfirmedOrder(confirmed);
+      try {
+        localStorage.setItem(`chotu_qr_order_${token}`, JSON.stringify(confirmed));
+      } catch {}
       setCart([]);
       setShowCartDrawer(false);
       if (onOrderCreated) onOrderCreated();
+      if (onMenuLoaded) {
+        onMenuLoaded({
+          restaurant_name: "",
+          table_id: "",
+          table_label: tableLabel,
+          table_status: "occupied",
+          items: [],
+        });
+      }
     } catch (err: any) {
       console.error("QR order API error:", err);
       const msg = err?.message || "Failed to submit order. Please alert the server.";

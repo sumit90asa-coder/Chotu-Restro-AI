@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 import jwt
 from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.core.security import is_token_revoked
 from app.core.permissions import UserRole, has_permission
 from app.database.session import get_db
 from app.models.user import User
@@ -31,7 +32,7 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if not token or token == "demo-token":
+    if not token or token == "demo-token" or is_token_revoked(token):
         raise credentials_exception
 
     try:

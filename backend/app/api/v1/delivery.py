@@ -1,10 +1,10 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.user import User
-from app.models.order import Order, OrderMode
+from app.models.order import Order, OrderMode, OrderStatus
 from app.schemas.delivery import (
     DeliveryOrderResponse, DispatchOrderRequest,
     VerifyOTPRequest, VerifyOTPResponse
@@ -16,28 +16,44 @@ router = APIRouter()
 
 @router.get("/orders", response_model=List[DeliveryOrderResponse])
 def get_delivery_orders(
+    status: Optional[str] = Query(None, description="Filter by delivery status"),
     db: Session = Depends(get_db),
     current_user: User = Depends(check_permission("delivery:read"))
 ):
-    # Delivery orders in DB
-    orders = db.query(Order).filter(
+    query = db.query(Order).filter(
         Order.restaurant_id == current_user.restaurant_id,
-        Order.mode.in_([OrderMode.DELIVERY, OrderMode.ZOMATO, OrderMode.SWIGGY, OrderMode.UBEREATS, OrderMode.DOORDASH])
-    ).order_by(Order.created_at.desc()).limit(50).all()
+        Order.mode.in_([OrderMode.DELIVERY, OrderMode.TAKEAWAY, OrderMode.ZOMATO, OrderMode.SWIGGY, OrderMode.UBEREATS, OrderMode.DOORDASH])
+    )
+
+    if status and status.lower() != "all":
+        try:
+            target_status = OrderStatus(status.lower())
+            query = query.filter(Order.status == target_status)
+        except ValueError:
+            pass
+
+    orders = query.order_by(Order.created_at.desc()).limit(50).all()
 
     res = []
     for o in orders:
+        summary_items = [f"{it.quantity}x {it.name}" for it in o.items] if o.items else []
+        items_summary = ", ".join(summary_items) if summary_items else "Standard Delivery Package"
+
         item = DeliveryOrderResponse(
             id=o.id,
             restaurant_id=o.restaurant_id,
             order_number=o.order_number,
             token_number=o.token_number,
-            customer_name=o.customer_name,
-            customer_phone=o.customer_phone,
-            delivery_address=o.delivery_address,
+            customer_name=o.customer_name or "Delivery Guest",
+            customer_phone=o.customer_phone or "Unspecified",
+            delivery_address=o.delivery_address or "Standard Direct Delivery",
             mode=o.mode,
             status=o.status,
+            payment_status=o.payment_status.value if o.payment_status else "pending",
             total_amount=o.total_amount,
+            items_summary=items_summary,
+            rider_name=o.aggregator_rider_name,
+            rider_phone=None,
             dispatch_time=o.dispatch_time,
             delivered_time=o.delivered_time,
             aggregator_platform=o.aggregator_platform,

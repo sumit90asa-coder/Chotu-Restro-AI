@@ -68,6 +68,55 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
   // Discount Percentage State
   const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [promoCodeInput, setPromoCodeInput] = useState<string>("");
+  const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
+  const [promoFeedback, setPromoFeedback] = useState<{ message: string; isError: boolean } | null>(null);
+
+  const handleApplyPromo = () => {
+    setPromoFeedback(null);
+    const query = promoCodeInput.trim().toUpperCase();
+    if (!query) return;
+
+    try {
+      const stored = localStorage.getItem("chotu_coupons");
+      const coupons = stored ? JSON.parse(stored) : [];
+      const found = coupons.find((c: any) => c.code.toUpperCase() === query);
+
+      if (!found) {
+        setPromoFeedback({ message: `Code "${query}" not found`, isError: true });
+        return;
+      }
+
+      if (!found.isActive) {
+        setPromoFeedback({ message: `Promo code "${query}" is currently disabled`, isError: true });
+        return;
+      }
+
+      if (rawSubtotal < (found.minOrderValue || 0)) {
+        setPromoFeedback({ message: `Min order ₹${found.minOrderValue} required for this code`, isError: true });
+        return;
+      }
+
+      if (found.discountType === "percentage") {
+        setDiscountPercent(found.discountValue);
+      } else {
+        const pct = rawSubtotal > 0 ? Math.min(100, (found.discountValue / rawSubtotal) * 100) : 0;
+        setDiscountPercent(Number(pct.toFixed(1)));
+      }
+
+      setAppliedPromo(found.code);
+      setPromoFeedback({ message: `Applied ${found.code}!`, isError: false });
+    } catch {
+      setPromoFeedback({ message: "Could not apply promo code", isError: true });
+    }
+  };
+
+  const handleClearPromo = () => {
+    setDiscountPercent(0);
+    setAppliedPromo(null);
+    setPromoCodeInput("");
+    setPromoFeedback(null);
+  };
 
   // Item Customization Note Modal
   const [customizingDish, setCustomizingDish] = useState<MenuItem | null>(null);
@@ -561,24 +610,63 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           {/* Settlement & Financial Breakdown Footer */}
           <div className="p-4 border-t border-stone-800/80 bg-[#161211] space-y-3">
             
-            {/* Quick Discount Selector */}
-            <div className="flex items-center justify-between text-[11px] font-mono text-stone-400">
-              <span>Apply Discount:</span>
-              <div className="flex items-center gap-1">
-                {[0, 5, 10, 15].map((pct) => (
-                  <button
-                    key={pct}
-                    onClick={() => setDiscountPercent(pct)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${
-                      discountPercent === pct
-                        ? "bg-[#E07A5F] text-stone-950"
-                        : "bg-stone-900 text-stone-400 hover:text-white"
-                    }`}
-                  >
-                    {pct === 0 ? "None" : `${pct}%`}
-                  </button>
-                ))}
+            {/* Quick Discount & Promo Code */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-mono text-stone-400">
+                <span>Apply Discount:</span>
+                <div className="flex items-center gap-1">
+                  {[0, 5, 10, 15].map((pct) => (
+                    <button
+                      key={pct}
+                      onClick={() => {
+                        setDiscountPercent(pct);
+                        setAppliedPromo(null);
+                        setPromoFeedback(null);
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${
+                        discountPercent === pct && !appliedPromo
+                          ? "bg-[#E07A5F] text-stone-950"
+                          : "bg-stone-900 text-stone-400 hover:text-white"
+                      }`}
+                    >
+                      {pct === 0 ? "None" : `${pct}%`}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Promo Code Input */}
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={promoCodeInput}
+                  onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                  placeholder="Promo Code (e.g. WELCOME20)"
+                  className="flex-1 bg-stone-900 border border-stone-800 rounded px-2 py-1 text-[11px] font-mono text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-[#E07A5F]"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyPromo}
+                  className="px-2 py-1 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded text-[10px] font-mono font-bold transition-colors"
+                >
+                  Apply
+                </button>
+                {appliedPromo && (
+                  <button
+                    type="button"
+                    onClick={handleClearPromo}
+                    className="px-1.5 py-1 text-rose-400 hover:text-rose-300 text-[10px] font-mono"
+                    title="Remove Promo"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {promoFeedback && (
+                <p className={`text-[10px] font-mono ${promoFeedback.isError ? "text-rose-400" : "text-emerald-400"}`}>
+                  {promoFeedback.message}
+                </p>
+              )}
             </div>
 
             {/* Calculations Breakdown */}

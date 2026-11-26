@@ -255,15 +255,15 @@ export default function CustomersPage() {
                       {c.email && <p className="text-[10px] text-stone-500">{c.email}</p>}
                     </td>
                     <td className="px-4 py-4 font-bold text-stone-200">
-                      {c.visit_count} visits
+                      {c.visit_count ?? (c as any).total_orders ?? 0} visits
                     </td>
                     <td className="px-4 py-4 font-bold text-emerald-400">
-                      ₹{c.total_spend.toLocaleString("en-IN")}
+                      ₹{Number(c.total_spend || 0).toLocaleString("en-IN")}
                     </td>
                     <td className="px-4 py-4">
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[11px] font-bold font-mono">
                         <Award className="w-3 h-3 text-amber-400" />
-                        {c.loyalty_points} pts
+                        {c.loyalty_points ?? (c as any).loyalty_points_balance ?? 0} pts
                       </span>
                     </td>
                     <td className="px-4 py-4">

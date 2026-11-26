@@ -404,12 +404,12 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
       <div className="pt-6 space-y-6">
         
         {/* Visual Workflow Canvas */}
-        <div className="bg-[#FAF8F5] border border-[#E8E4DF] rounded-2xl p-6 sm:p-10 shadow-sm relative overflow-hidden">
+        <div className="bg-[#181514] border border-stone-800 rounded-2xl p-6 sm:p-10 shadow-sm relative overflow-hidden">
           
           {/* Handwritten Annotation at top-left with dashed arrow */}
           <div className="relative mb-8 pl-4 sm:pl-8">
             <div className="inline-block relative">
-              <span className="font-hand text-3xl sm:text-4xl text-[#1E1B18] font-bold block leading-tight">
+              <span className="font-hand text-3xl sm:text-4xl text-white font-bold block leading-tight">
                 Third-party<br />delivery apps
               </span>
             </div>
@@ -451,28 +451,28 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
 
             {/* Connecting Dashed Curved Arrow 1 */}
             <div className="hidden lg:flex items-center justify-center">
-              <svg width="70" height="50" viewBox="0 0 70 50" fill="none" className="text-[#C4BCB3]">
+              <svg width="70" height="50" viewBox="0 0 70 50" fill="none" className="text-stone-600">
                 <path d="M5 10C25 35 45 40 62 42M62 42L54 36M62 42L56 47" stroke="currentColor" strokeWidth="2" strokeDasharray="4 4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
 
             {/* Step 2: The Aggregator Hub Card (Exact match to screenshot) */}
-            <div className="w-full max-w-sm bg-white border border-[#E8E4DF] shadow-[0_6px_25px_rgba(0,0,0,0.06)] rounded-2xl p-5 sm:p-6 relative">
+            <div className="w-full max-w-sm bg-[#141211] border border-stone-800 shadow-[0_6px_25px_rgba(0,0,0,0.4)] rounded-2xl p-5 sm:p-6 relative">
               
               {/* Takeout Bag Icon with Red "1" notification badge perched at the top */}
               <div className="absolute -top-5 left-8 flex items-center justify-center">
                 <div className="relative">
-                  <div className="w-10 h-10 bg-[#352542] rounded-xl flex items-center justify-center shadow-md border-2 border-white">
+                  <div className="w-10 h-10 bg-[#352542] rounded-xl flex items-center justify-center shadow-md border-2 border-[#141211]">
                     <ShoppingBag className="w-5 h-5 text-white" />
                   </div>
-                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#FF5252] text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs border-2 border-white">
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#FF5252] text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs border-2 border-[#141211]">
                     1
                   </span>
                 </div>
               </div>
 
               {/* Table Headers: New | Ongoing | Done */}
-              <div className="pt-3 pb-2 flex items-center justify-between text-xs font-medium text-[#8C8479]">
+              <div className="pt-3 pb-2 flex items-center justify-between text-xs font-medium text-stone-400">
                 <div className="w-24"></div>
                 <div className="flex items-center gap-6 sm:gap-7 text-center font-mono text-xs flex-1 justify-center pr-3">
                   <span className="w-8">New</span>
@@ -488,13 +488,13 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
                 {/* Row 1: Uber Eats (1 / 0 / 0) */}
                 <div className="flex items-center justify-between gap-3">
                   <div className="w-24 shrink-0 flex items-center">
-                    <div className="w-9 h-9 bg-black rounded-lg flex flex-col items-center justify-center text-white shadow-xs p-0.5">
+                    <div className="w-9 h-9 bg-black rounded-lg flex flex-col items-center justify-center text-white shadow-xs p-0.5 border border-stone-800">
                       <span className="text-[7px] font-bold leading-tight tracking-tight">Uber</span>
                       <span className="text-[8px] font-black leading-tight text-[#06C167]">Eats</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-6 sm:gap-7 text-center font-mono text-sm font-bold text-[#1E1B18] flex-1 justify-center pr-3">
+                  <div className="flex items-center gap-6 sm:gap-7 text-center font-mono text-sm font-bold text-stone-100 flex-1 justify-center pr-3">
                     <span className="w-8">1</span>
                     <span className="w-12">0</span>
                     <span className="w-8">0</span>
@@ -512,14 +512,14 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
                 {/* Row 2: DoorDash (0 / 1 / 0) */}
                 <div className="flex items-center justify-between gap-3">
                   <div className="w-24 shrink-0 flex items-center">
-                    <div className="w-9 h-9 bg-white border border-[#E8E4DF] rounded-lg flex items-center justify-center shadow-xs p-1">
+                    <div className="w-9 h-9 bg-stone-900 border border-stone-800 rounded-lg flex items-center justify-center shadow-xs p-1">
                       <svg viewBox="0 0 24 24" className="w-6 h-6 text-[#FF3008] fill-current">
                         <path d="M23.071 8.411a6.071 6.071 0 0 0-5.42-3.328H1.667A1.667 1.667 0 0 0 0 6.75v.083a1.667 1.667 0 0 0 1.667 1.667h16.03a3.571 3.571 0 0 1 3.571 3.571c0 1.705-1.198 3.13-2.802 3.488l-4.71 1.05a1.667 1.667 0 1 0 .727 3.253l4.71-1.05A6.072 6.072 0 0 0 23.07 8.411Z" />
                       </svg>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-6 sm:gap-7 text-center font-mono text-sm font-bold text-[#1E1B18] flex-1 justify-center pr-3">
+                  <div className="flex items-center gap-6 sm:gap-7 text-center font-mono text-sm font-bold text-stone-100 flex-1 justify-center pr-3">
                     <span className="w-8">0</span>
                     <span className="w-12">1</span>
                     <span className="w-8">0</span>
@@ -544,7 +544,7 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-6 sm:gap-7 text-center font-mono text-sm font-bold text-[#1E1B18] flex-1 justify-center pr-3">
+                  <div className="flex items-center gap-6 sm:gap-7 text-center font-mono text-sm font-bold text-stone-100 flex-1 justify-center pr-3">
                     <span className="w-8">0</span>
                     <span className="w-12">0</span>
                     <span className="w-8">1</span>
@@ -564,7 +564,7 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
 
             {/* Connecting Dashed Curved Arrow 2 */}
             <div className="hidden lg:flex items-center justify-center">
-              <svg width="70" height="50" viewBox="0 0 70 50" fill="none" className="text-[#C4BCB3]">
+              <svg width="70" height="50" viewBox="0 0 70 50" fill="none" className="text-stone-600">
                 <path d="M5 40C25 15 45 10 62 10M62 10L54 16M62 10L56 5" stroke="currentColor" strokeWidth="2" strokeDasharray="4 4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>

@@ -40,7 +40,7 @@ export default function AnalyticsPage() {
       try {
         setLoading(true);
         const [ovData, ordData] = await Promise.all([
-          fetchAnalyticsOverview().catch(() => null),
+          fetchAnalyticsOverview(dateRange).catch(() => null),
           fetchLiveOrders("completed").catch(() => []),
         ]);
         if (ovData) setOverview(ovData);

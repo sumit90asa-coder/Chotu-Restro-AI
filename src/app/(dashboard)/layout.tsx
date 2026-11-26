@@ -48,7 +48,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#110E0D] text-stone-100">
+    <div data-theme="dark-obsidian" className="flex h-screen w-screen overflow-hidden bg-[#110E0D] text-stone-100">
       {/* Sidebar Navigation */}
       <Sidebar />
 

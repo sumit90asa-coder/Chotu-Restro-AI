@@ -86,8 +86,8 @@ export function Sidebar() {
       }`}
     >
       {/* Brand Header */}
-      <div className="flex items-center justify-between px-4 h-16 border-b border-stone-800/80 bg-[#191615]">
-        <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
+      <div className={`flex items-center ${collapsed ? "justify-center px-2 relative" : "justify-between px-4"} h-16 border-b border-stone-800/80 bg-[#191615]`}>
+        <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden" title={collapsed ? "Chotu Restro AI" : undefined}>
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#E07A5F] to-[#F4A261] flex items-center justify-center text-white font-bold shadow-md shadow-[#E07A5F]/20 flex-shrink-0">
             <Flame className="w-5 h-5 text-white" />
           </div>
@@ -100,10 +100,12 @@ export function Sidebar() {
         </Link>
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800/80 transition-colors"
+          className={`p-1.5 text-stone-400 hover:text-white hover:bg-stone-800/80 transition-colors ${
+            collapsed ? "absolute -right-3 top-5 bg-[#191615] border border-stone-700/80 shadow-md z-40 rounded-full" : "rounded-lg"
+          }`}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
       </div>
 

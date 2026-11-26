@@ -38,7 +38,7 @@ def unauthed_client():
         yield client
     app.dependency_overrides.clear()
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def owner_token(pg_session):
     owner = pg_session.query(User).filter(User.role == UserRole.OWNER).first()
     token = create_access_token(
@@ -47,7 +47,7 @@ def owner_token(pg_session):
     )
     return token
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def manager_token(pg_session):
     manager = pg_session.query(User).filter(User.role == UserRole.MANAGER).first()
     token = create_access_token(
@@ -56,7 +56,7 @@ def manager_token(pg_session):
     )
     return token
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def waiter_token(pg_session):
     waiter = pg_session.query(User).filter(User.role == UserRole.WAITER).first()
     token = create_access_token(

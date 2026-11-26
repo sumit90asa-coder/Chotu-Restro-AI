@@ -9,7 +9,7 @@ from app.database.session import get_db
 from app.models.table import DiningTable, TableStatus
 from app.models.restaurant import Restaurant
 from app.models.menu import MenuItem
-from app.models.order import Order, OrderItem, PlacedBy
+from app.models.order import Order, OrderItem, PlacedBy, OrderStatus
 from app.schemas.menu import MenuItemResponse
 from app.schemas.order import OrderItemCreate, OrderResponse
 from app.services.order_service import OrderService
@@ -99,6 +99,21 @@ def get_qr_menu(token: str, db: Session = Depends(get_db)):
         items=items
     )
 
+@router.get("/{token}/order", response_model=Optional[OrderResponse])
+def get_qr_table_active_order(token: str, db: Session = Depends(get_db)):
+    """
+    Fetch active order for table identified by secure QR token.
+    Allows customers to view running bill, items, and status upon page reload or reordering.
+    """
+    table = get_table_by_token(token, db)
+    if not table.current_order_id:
+        return None
+    order = db.query(Order).filter(
+        Order.id == table.current_order_id,
+        Order.status.notin_([OrderStatus.COMPLETED, OrderStatus.CANCELLED])
+    ).first()
+    return order
+
 @router.post("/{token}/orders", response_model=OrderResponse)
 async def submit_qr_order(
     token: str,
@@ -173,6 +188,8 @@ async def submit_qr_order(
             db, table.restaurant_id, table.id, customer_name=submission.customer_name, placed_by=PlacedBy.QR
         )
         order.placed_by = PlacedBy.QR
+        table.status = TableStatus.OCCUPIED
+        table.current_order_id = order.id
 
         newly_added_items = []
         for dish, qty, notes in validated_items:

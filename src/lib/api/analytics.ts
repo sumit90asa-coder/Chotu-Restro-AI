@@ -43,8 +43,9 @@ export interface AnalyticsOverview {
   }>;
 }
 
-export async function fetchAnalyticsOverview(): Promise<AnalyticsOverview> {
-  return await apiFetch<AnalyticsOverview>("/analytics/overview");
+export async function fetchAnalyticsOverview(period?: string): Promise<AnalyticsOverview> {
+  const q = period ? `?period=${encodeURIComponent(period)}` : "";
+  return await apiFetch<AnalyticsOverview>(`/analytics/overview${q}`);
 }
 
 export const fetchSalesOverview = fetchAnalyticsOverview;

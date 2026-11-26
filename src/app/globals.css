@@ -30,6 +30,26 @@
   --color-topography: #D95D39;     /* Burnt Terracotta Contour Lines */
 }
 
+[data-theme="dark-obsidian"] {
+  --color-surface: #110E0D;
+  --color-surface-subtle: #181514;
+  --color-surface-card: #181514;
+  --color-surface-elevated: #1F1B1A;
+  --color-primary: #E07A5F;
+  --color-primary-hover: #D0694E;
+  --color-primary-faint: rgba(224, 122, 95, 0.12);
+  --color-secondary: #F4A261;
+  --color-secondary-hover: #E7914E;
+  --color-secondary-faint: rgba(244, 162, 97, 0.12);
+  --color-text: #F5F5F4;
+  --color-text-secondary: #A8A29E;
+  --color-text-faint: #78716C;
+  --color-border: #292524;
+  --color-border-subtle: #1C1917;
+  --color-border-strong: #44403C;
+  --color-hero-bg: #110E0D;
+}
+
 [data-theme="warm-dining"] {
   /* Theme 2: Artisanal Warm Cream + Tomato Red & Golden Amber */
   --color-surface: #FFFBF5;        /* Warm Cream */

@@ -28,7 +28,11 @@ class DeliveryOrderResponse(BaseModel):
     delivery_address: Optional[str] = None
     mode: OrderMode
     status: OrderStatus
+    payment_status: Optional[str] = "pending"
     total_amount: Decimal
+    items_summary: Optional[str] = ""
+    rider_name: Optional[str] = None
+    rider_phone: Optional[str] = None
     dispatch_time: Optional[datetime] = None
     delivered_time: Optional[datetime] = None
     aggregator_platform: Optional[str] = None
