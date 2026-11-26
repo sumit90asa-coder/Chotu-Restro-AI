@@ -15,7 +15,9 @@ import {
   Filter,
   ArrowDownLeft,
   CheckCircle2,
-  DollarSign
+  DollarSign,
+  Edit3,
+  Check
 } from "lucide-react";
 
 export default function ExpensesPage() {
@@ -23,6 +25,9 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [showFloatModal, setShowFloatModal] = useState<boolean>(false);
+  const [openingFloat, setOpeningFloat] = useState<number>(5000);
+  const [floatInput, setFloatInput] = useState<string>("5000");
   const [newExp, setNewExp] = useState({
     title: "",
     category: "supplies" as Expense["category"],
@@ -35,6 +40,7 @@ export default function ExpensesPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const storageKey = user?.restaurantId ? `chotu_expenses_${user.restaurantId}` : "chotu_expenses_default";
+  const floatKey = user?.restaurantId ? `chotu_opening_float_${user.restaurantId}` : "chotu_opening_float_default";
 
   useEffect(() => {
     try {
@@ -47,11 +53,37 @@ export default function ExpensesPage() {
     } catch {
       setExpenses([]);
     }
-  }, [storageKey]);
+
+    try {
+      const storedFloat = localStorage.getItem(floatKey);
+      if (storedFloat !== null) {
+        const parsed = Number(storedFloat);
+        if (!isNaN(parsed)) {
+          setOpeningFloat(parsed);
+          setFloatInput(parsed.toString());
+        }
+      }
+    } catch {}
+  }, [storageKey, floatKey]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleSaveOpeningFloat = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseFloat(floatInput);
+    if (isNaN(val) || val < 0) {
+      showToast("Please enter a valid positive opening float amount.");
+      return;
+    }
+    setOpeningFloat(val);
+    try {
+      localStorage.setItem(floatKey, val.toString());
+    } catch {}
+    showToast(`Opening register float updated to ₹${val.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`);
+    setShowFloatModal(false);
   };
 
   const handleAddExpense = (e: React.FormEvent) => {
@@ -104,13 +136,26 @@ export default function ExpensesPage() {
         title="Petty Cash & Expense Register"
         subtitle="Track daily restaurant disbursements, cash drawer outflow, vendor payouts, and maintain complete audit compliance."
         actions={
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs shadow-md transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Record Expense</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setFloatInput(openingFloat.toString());
+                setShowFloatModal(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 border border-stone-800 hover:border-emerald-500/40 text-emerald-400 font-semibold text-xs transition-all cursor-pointer shadow-sm"
+              title="Enter starting cash balance in drawer"
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              <span>Enter Opening Balance</span>
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs shadow-md transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Record Expense</span>
+            </button>
+          </div>
         }
       />
 
@@ -140,12 +185,26 @@ export default function ExpensesPage() {
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#181514] border border-stone-800 flex items-center justify-between">
+        <div 
+          onClick={() => {
+            setFloatInput(openingFloat.toString());
+            setShowFloatModal(true);
+          }}
+          className="p-4 rounded-2xl bg-[#181514] border border-stone-800 hover:border-emerald-500/50 transition-all flex items-center justify-between cursor-pointer group"
+          title="Click to change opening register float"
+        >
           <div>
-            <span className="text-xs text-stone-400">Opening Register Float</span>
-            <p className="text-xl font-bold text-emerald-400 mt-0.5">₹5,000.00</p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-stone-400">Opening Register Float</span>
+              <span className="text-[10px] text-emerald-400/80 group-hover:text-emerald-300 font-mono flex items-center gap-0.5">
+                <Edit3 className="w-2.5 h-2.5 inline" /> Edit
+              </span>
+            </div>
+            <p className="text-xl font-bold text-emerald-400 mt-0.5">
+              ₹{openingFloat.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
           </div>
-          <div className="p-2.5 rounded-xl bg-stone-800 text-emerald-400">
+          <div className="p-2.5 rounded-xl bg-stone-800 group-hover:bg-emerald-500/20 text-emerald-400 transition-colors">
             <Wallet className="w-5 h-5" />
           </div>
         </div>
@@ -330,6 +389,57 @@ export default function ExpensesPage() {
               className="px-4 py-2 rounded-xl bg-[#E07A5F] text-stone-950 font-bold text-xs"
             >
               Save Expense
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Set Opening Register Float Modal */}
+      <Modal
+        isOpen={showFloatModal}
+        onClose={() => setShowFloatModal(false)}
+        title="Set Opening Register Float"
+        description="Enter starting cash amount present in the drawer for daily reconciliation"
+        maxWidth="sm"
+      >
+        <form onSubmit={handleSaveOpeningFloat} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-stone-300 mb-1.5">
+              Opening Cash Balance (₹) *
+            </label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-sm">₹</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                required
+                value={floatInput}
+                onChange={(e) => setFloatInput(e.target.value)}
+                placeholder="e.g. 5000"
+                className="w-full pl-8 pr-4 py-2.5 rounded-xl bg-stone-900 border border-stone-800 text-white font-mono text-base focus:outline-none focus:border-[#E07A5F]"
+                autoFocus
+              />
+            </div>
+            <p className="text-[11px] text-stone-500 mt-1.5">
+              This amount is verified during cash drawer close and official Z-Report tax reconciliation.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-stone-800">
+            <button
+              type="button"
+              onClick={() => setShowFloatModal(false)}
+              className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-medium cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
+            >
+              <Check className="w-4 h-4" />
+              <span>Save Opening Balance</span>
             </button>
           </div>
         </form>

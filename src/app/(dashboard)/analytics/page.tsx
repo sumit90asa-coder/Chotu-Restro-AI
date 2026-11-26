@@ -29,6 +29,19 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [showZReportModal, setShowZReportModal] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [openingFloat, setOpeningFloat] = useState<number>(5000);
+
+  const floatKey = user?.restaurantId ? `chotu_opening_float_${user.restaurantId}` : "chotu_opening_float_default";
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(floatKey);
+      if (stored !== null) {
+        const val = Number(stored);
+        if (!isNaN(val)) setOpeningFloat(val);
+      }
+    } catch {}
+  }, [floatKey]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -60,7 +73,7 @@ export default function AnalyticsPage() {
   const scCollected = grossRevenue > 0 ? Number((netSubtotal * 0.05).toFixed(2)) : 0;
   const cashSales = grossRevenue > 0 ? Number((grossRevenue * 0.15).toFixed(2)) : 0;
   const cashPayouts = grossRevenue > 0 ? Number((cashSales * 0.35).toFixed(2)) : 0;
-  const expectedDrawerCash = Number((5000 + cashSales - cashPayouts).toFixed(2));
+  const expectedDrawerCash = Number((openingFloat + cashSales - cashPayouts).toFixed(2));
   const totalTax = cgstCollected + sgstCollected;
   const halfTax = totalTax / 2;
   const serviceCharge = scCollected;
@@ -278,7 +291,7 @@ export default function AnalyticsPage() {
             <div className="space-y-1.5 py-2 border-b border-stone-800">
               <div className="flex justify-between">
                 <span>Opening Float:</span>
-                <span>₹5,000.00</span>
+                <span>₹{openingFloat.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Cash Sales:</span>
