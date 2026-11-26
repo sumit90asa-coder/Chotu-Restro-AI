@@ -22,6 +22,45 @@ from app.schemas.ai import AIChatResponse
 
 class AIService:
     @staticmethod
+    def _extract_table_token(msg_lower: str) -> Optional[str]:
+        """Extract an explicit table identifier (e.g. '1' from 'table 1', 't-01', 't1') without matching words like 'roti'."""
+        m = re.search(r'\b(?:table|tbl)\s*[-_#]?\s*(\d+|[a-zA-Z]\d*)\b|\bt\s*[-_#]?\s*(\d+)\b', msg_lower)
+        if not m:
+            return None
+        return m.group(1) or m.group(2)
+
+    @staticmethod
+    def _resolve_table(all_tables: List[DiningTable], raw_token: str) -> Optional[DiningTable]:
+        """Resolve a table token (e.g. '1', '01', 'T-01', 'A2') to a DiningTable without UUID substring collisions."""
+        if not raw_token or not all_tables:
+            return None
+        token = raw_token.strip().lower()
+        norm_num = token.lstrip("0") or ("0" if token.isdigit() else token)
+        candidates = {
+            token,
+            norm_num,
+            f"t-{norm_num}",
+            f"t-{norm_num.zfill(2)}",
+            f"table {norm_num}",
+            f"table-{norm_num}",
+            f"t{norm_num}",
+        }
+        for t in all_tables:
+            lbl = (t.label or "").strip().lower()
+            if lbl in candidates:
+                return t
+        for t in all_tables:
+            tid = (t.id or "").strip().lower()
+            if not tid.startswith("tbl-") and tid in candidates:
+                return t
+        if norm_num.isdigit():
+            for t in all_tables:
+                nums = [n.lstrip("0") or "0" for n in re.findall(r'\d+', t.label or "")]
+                if norm_num in nums:
+                    return t
+        return None
+
+    @staticmethod
     async def chat(
         db: Session,
         restaurant_id: str,
@@ -216,8 +255,36 @@ class AIService:
             intent = "MARK_OUT_OF_STOCK"
         elif "whatsapp" in msg_lower and ("bill" in msg_lower or "invoice" in msg_lower or "bhejo" in msg_lower):
             intent = "SEND_BILL_WHATSAPP"
-        elif ("add" in msg_lower or "daalo" in msg_lower) and ("table" in msg_lower or "naan" in msg_lower or "dal" in msg_lower or "pe" in msg_lower):
+        elif any(w in msg_lower for w in ["restock", "refill", "add stock", "bharo", "replenish"]) or (
+            any(w in msg_lower for w in ["add", "purchase", "procure"]) and any(u in msg_lower for u in ["kg", " g ", "gram", "liter", "litre", "ml", "pcs", "packet", "stock", "inventory"])
+        ):
+            intent = "RESTOCK_INGREDIENT"
+        elif any(w in msg_lower for w in ["remove", "delete", "hatana", "hatao", "nikalo", "minus", "cancel item"]) and (
+            re.search(r'(?:table|tbl|t)\s*[-_#]?\s*(\d+)', msg_lower) or any(w in msg_lower for w in ["order", "from table", "pe se"])
+        ):
+            intent = "REMOVE_ITEMS"
+        elif ("add" in msg_lower or "daalo" in msg_lower) and (
+            re.search(r'(?:table|tbl|t)\s*[-_#]?\s*(\d+)', msg_lower) or "naan" in msg_lower or "dal" in msg_lower or re.search(r'\bpe\b', msg_lower)
+        ):
             intent = "ADD_ITEMS"
+        elif (
+            AIService._extract_table_token(msg_lower) is not None
+            and any(w in msg_lower for w in [
+                "vacant", "vacate", "free", "clear", "empty", "khali", "available", "reset",
+                "occupied", "occupy", "busy", "seated", "bhara",
+                "reserved", "reserve", "book", "booked",
+                "billed",
+            ])
+            and any(v in msg_lower for v in [
+                "set", "mark", "make", "update", "change", "switch", "put", "turn",
+                "karo", "kar do", "kardo", "banao", "rakho",
+                "vacate", "clear", "free", "reserve", "occupy", "reset",
+            ])
+            and not msg_lower.endswith("?")
+            and not any(msg_lower.startswith(q) for q in ["is ", "are ", "what ", "check ", "show "])
+            and "hai kya" not in msg_lower
+        ):
+            intent = "UPDATE_TABLE_STATUS"
         elif any(w in msg_lower for w in ["summarise", "summarize", "performance", "kaisa chal raha hai", "overview", "summary"]):
             intent = "RESTAURANT_SUMMARY"
         elif "yesterday" in msg_lower or "kal kitn" in msg_lower or "kal ki" in msg_lower:
@@ -336,23 +403,128 @@ class AIService:
                 "status": "dispatched"
             }
 
+        elif intent == "RESTOCK_INGREDIENT":
+            from app.services.inventory_service import InventoryService
+            target_ing = None
+            sorted_ings = sorted(all_ingredients, key=lambda x: len(x.name), reverse=True)
+            for ing in sorted_ings:
+                if ing.name.lower() in msg_lower:
+                    target_ing = ing
+                    break
+            if not target_ing:
+                for ing in sorted_ings:
+                    words = [w for w in ing.name.lower().split() if len(w) > 2]
+                    if any(w in msg_lower for w in words):
+                        target_ing = ing
+                        break
+
+            qty_match = re.search(r'(\d+(?:\.\d+)?)\s*(kg|g|grams?|l|ml|litres?|liters?|pcs|packets?|cans?)?\b', msg_lower)
+            if not target_ing:
+                reply = "Could not identify which raw ingredient to restock. Please mention the ingredient name (e.g., 'Restock Chicken by 5 kg')."
+                suggested_action = "RESTOCK_INGREDIENT"
+            elif not qty_match:
+                reply = f"Please specify a quantity to restock for {target_ing.name} (e.g., 'Restock {target_ing.name} by 5 {target_ing.unit}')."
+                suggested_action = "RESTOCK_INGREDIENT"
+            else:
+                raw_qty = Decimal(qty_match.group(1))
+                unit_token = (qty_match.group(2) or target_ing.unit).lower()
+                if unit_token in ("g", "gram", "grams") and target_ing.unit.lower() == "kg":
+                    delta_qty = (raw_qty / Decimal("1000")).quantize(Decimal("0.001"))
+                elif unit_token in ("kg",) and target_ing.unit.lower() == "g":
+                    delta_qty = (raw_qty * Decimal("1000")).quantize(Decimal("0.001"))
+                elif unit_token == "ml" and target_ing.unit.lower() == "l":
+                    delta_qty = (raw_qty / Decimal("1000")).quantize(Decimal("0.001"))
+                elif unit_token in ("l", "liter", "liters", "litre", "litres") and target_ing.unit.lower() == "ml":
+                    delta_qty = (raw_qty * Decimal("1000")).quantize(Decimal("0.001"))
+                else:
+                    delta_qty = raw_qty.quantize(Decimal("0.001"))
+
+                if delta_qty <= Decimal("0"):
+                    reply = "Restock quantity must be greater than zero."
+                else:
+                    updated_ing = InventoryService.adjust_stock(
+                        db, restaurant_id, target_ing.id, delta_qty, "purchase", notes="Restocked via Chotu AI"
+                    )
+                    reply = f"✅ Restocked **{updated_ing.name}** by +{delta_qty} {updated_ing.unit}. New available stock: **{float(updated_ing.current_stock):.3f} {updated_ing.unit}**."
+                    suggested_action = "RESTOCK_INGREDIENT"
+                    action_data = {
+                        "ingredient_id": updated_ing.id,
+                        "ingredient_name": updated_ing.name,
+                        "added_qty": float(delta_qty),
+                        "new_stock": float(updated_ing.current_stock),
+                        "unit": updated_ing.unit,
+                    }
+
+        elif intent == "REMOVE_ITEMS":
+            target_table = None
+            raw_table_token = AIService._extract_table_token(msg_lower)
+            if raw_table_token:
+                target_table = AIService._resolve_table(all_tables, raw_table_token)
+                if not target_table:
+                    return AIChatResponse(
+                        reply=f"Table {raw_table_token} was not found in your restaurant layout.",
+                        intent=intent,
+                        suggested_action="NONE"
+                    )
+
+            if not target_table or not target_table.current_order_id:
+                reply = f"No active order found on {target_table.label if target_table else 'the specified table'} to remove items from."
+                suggested_action = "REMOVE_ITEMS_FROM_ORDER"
+            else:
+                order = db.query(Order).filter(Order.id == target_table.current_order_id).first()
+                if not order or not order.items:
+                    reply = f"{target_table.label} currently has no items in its active order."
+                    suggested_action = "REMOVE_ITEMS_FROM_ORDER"
+                else:
+                    sorted_order_items = sorted(order.items, key=lambda x: len(x.name), reverse=True)
+                    matched_item = None
+                    for oi in sorted_order_items:
+                        if oi.name.lower() in msg_lower:
+                            matched_item = oi
+                            break
+                    if not matched_item:
+                        for oi in sorted_order_items:
+                            words = [w for w in oi.name.lower().split() if len(w) > 2]
+                            if any(w in msg_lower for w in words):
+                                matched_item = oi
+                                break
+
+                    if not matched_item:
+                        reply = f"Could not find that dish in {target_table.label}'s current order ({', '.join(oi.name for oi in order.items)})."
+                        suggested_action = "REMOVE_ITEMS_FROM_ORDER"
+                    else:
+                        qty_match = re.search(r'\b(\d+)\b(?!\s*(?:table|tbl|t))', re.sub(r'(?:table|tbl|t)\s*[-_#]?\s*\d+', '', msg_lower))
+                        remove_qty = int(qty_match.group(1)) if qty_match else matched_item.quantity
+                        removed_name = matched_item.name
+                        updated_order = OrderService.add_or_update_order_item(
+                            db, order.id, matched_item.menu_item_id, -remove_qty, notes="Removed via Chotu AI"
+                        )
+                        if updated_order is None:
+                            reply = f"✅ Removed **{removed_name}** from {target_table.label}. The draft order is now empty and table is vacant."
+                        else:
+                            reply = f"✅ Removed {min(remove_qty, matched_item.quantity)}x **{removed_name}** from {target_table.label}. Updated total: **₹ {updated_order.total_amount:,.2f}**."
+                        suggested_action = "REMOVE_ITEMS_FROM_ORDER"
+                        action_data = {
+                            "table_id": target_table.id,
+                            "table_label": target_table.label,
+                            "dish_name": removed_name,
+                            "removed_qty": remove_qty,
+                        }
+
         elif intent == "ADD_ITEMS":
             target_table = None
-            table_match = re.search(r'(?:table|tbl|t)\s*[-_#]?\s*(\d+|[a-zA-Z]\d*)', msg_lower)
-            if table_match:
-                t_token = table_match.group(1).lstrip("0") or "1"
-                target_table = db.query(DiningTable).filter(
-                    DiningTable.restaurant_id == restaurant_id,
-                    or_(
-                        DiningTable.label.ilike(f"%{t_token}%"),
-                        DiningTable.id.ilike(f"%{t_token}%"),
-                        DiningTable.label.ilike(f"%T-{t_token}%"),
-                        DiningTable.label.ilike(f"%Table {t_token}%")
+            raw_table_token = AIService._extract_table_token(msg_lower)
+            if raw_table_token:
+                target_table = AIService._resolve_table(all_tables, raw_table_token)
+                if not target_table:
+                    return AIChatResponse(
+                        reply=f"Table {raw_table_token} was not found in your restaurant layout.",
+                        intent=intent,
+                        suggested_action="NONE"
                     )
-                ).first()
 
             if not target_table:
-                target_table = db.query(DiningTable).filter(DiningTable.restaurant_id == restaurant_id).first()
+                target_table = all_tables[0] if all_tables else None
 
             if not target_table:
                 reply = "No dining table found for this restaurant."
@@ -360,13 +532,17 @@ class AIService:
             else:
                 target_dish = None
                 dishes = db.query(MenuItem).filter(MenuItem.restaurant_id == restaurant_id, MenuItem.is_active == True).all()
-                for d in dishes:
-                    if "naan" in msg_lower and "naan" in d.name.lower():
+                sorted_dishes = sorted(dishes, key=lambda d: len(d.name), reverse=True)
+                for d in sorted_dishes:
+                    if d.name.lower() in msg_lower:
                         target_dish = d
                         break
-                    elif "dal" in msg_lower and "dal" in d.name.lower():
-                        target_dish = d
-                        break
+                if not target_dish:
+                    for d in sorted_dishes:
+                        words = [w for w in d.name.lower().split() if len(w) > 3]
+                        if any(w in msg_lower for w in words):
+                            target_dish = d
+                            break
                 if not target_dish and dishes:
                     target_dish = dishes[0]
 
@@ -374,7 +550,9 @@ class AIService:
                     order = OrderService.get_or_create_table_order(
                         db, restaurant_id, target_table.id, customer_name="Guest", placed_by=PlacedBy.POS
                     )
-                    qty = 2 if "2" in message else 1
+                    cleaned_for_qty = re.sub(r'(?:table|tbl|t)\s*[-_#]?\s*\d+', '', msg_lower)
+                    qty_match = re.search(r'\b(\d+)\b', cleaned_for_qty)
+                    qty = max(1, int(qty_match.group(1))) if qty_match else 1
                     OrderService.add_or_update_order_item(db, order.id, target_dish.id, qty, notes="Added via Chotu AI")
                     kot = OrderService.fire_kot(db, order.id, captain_notes="Fired via Chotu AI")
                     reply = f"✅ Added {qty}x {target_dish.name} to {target_table.label} (Order #{order.order_number})! KOT #{kot.kot_number} fired to Kitchen KDS."
@@ -391,6 +569,74 @@ class AIService:
                 else:
                     reply = "Could not find requested dish in menu catalog."
                     suggested_action = "ADD_ITEMS_TO_KOT"
+
+        elif intent == "UPDATE_TABLE_STATUS":
+            raw_table_token = AIService._extract_table_token(msg_lower)
+            target_table = AIService._resolve_table(all_tables, raw_table_token) if raw_table_token else None
+            if not target_table:
+                reply = f"Table {raw_table_token or ''} was not found in your restaurant layout.".strip()
+                suggested_action = "NONE"
+            else:
+                target_status = None
+                if any(w in msg_lower for w in ["vacant", "vacate", "free", "clear", "empty", "khali", "available", "reset"]):
+                    target_status = TableStatus.VACANT
+                elif any(w in msg_lower for w in ["reserved", "reserve", "book", "booked"]):
+                    target_status = TableStatus.RESERVED
+                elif "billed" in msg_lower:
+                    target_status = TableStatus.BILLED
+                elif any(w in msg_lower for w in ["occupied", "occupy", "busy", "seated", "bhara"]):
+                    target_status = TableStatus.OCCUPIED
+
+                if not target_status:
+                    reply = f"Please specify the target status for {target_table.label} (vacant, occupied, reserved, or billed)."
+                    suggested_action = "NONE"
+                else:
+                    target_table.status = target_status
+                    if target_status == TableStatus.VACANT:
+                        if target_table.current_order_id:
+                            old_order = db.query(Order).filter(
+                                Order.id == target_table.current_order_id,
+                                Order.restaurant_id == restaurant_id,
+                            ).first()
+                            if old_order and old_order.payment_status != PaymentStatus.PAID and old_order.status != OrderStatus.COMPLETED:
+                                old_order.status = OrderStatus.CANCELLED
+                        target_table.current_order_id = None
+                        target_table.current_bill = Decimal("0.00")
+                        target_table.opened_at = None
+                        target_table.captain_name = None
+                        target_table.assigned_waiter_id = None
+                    elif target_status == TableStatus.OCCUPIED:
+                        if not target_table.opened_at:
+                            target_table.opened_at = datetime.now(timezone.utc).strftime("%H:%M")
+                        if not target_table.current_order_id:
+                            active_order = OrderService.get_or_create_table_order(
+                                db,
+                                restaurant_id,
+                                target_table.id,
+                                customer_name=target_table.captain_name or f"Table {target_table.label} Guest",
+                                placed_by=PlacedBy.POS,
+                            )
+                            target_table.current_order_id = active_order.id
+
+                    db.commit()
+                    db.refresh(target_table)
+                    try:
+                        from app.websocket.manager import ws_manager
+                        from app.websocket.events import WSEventType, create_ws_message
+                        await ws_manager.broadcast_to_restaurant(
+                            restaurant_id,
+                            create_ws_message(WSEventType.TABLE_UPDATED, {"table_id": target_table.id, "status": target_table.status.value}),
+                        )
+                    except Exception:
+                        pass
+
+                    reply = f"✅ Updated **{target_table.label}** status to **{target_status.value.upper()}**."
+                    suggested_action = "UPDATE_TABLE_STATUS"
+                    action_data = {
+                        "table_id": target_table.id,
+                        "table_label": target_table.label,
+                        "status": target_status.value,
+                    }
 
         # -------------------------------------------------------------
         # 4. Factual Operational Queries & Conversational Handling
@@ -427,13 +673,8 @@ class AIService:
                     reply = f"All {total_tables} dining tables are currently vacant and ready for seating."
 
             elif intent == "QUERY_SPECIFIC_TABLE":
-                match = re.search(r'(?:table|tbl|t)\s*[-_#]?\s*(\d+|[a-zA-Z]\d*)', msg_lower)
-                t_token = match.group(1).lstrip("0") if match else "1"
-                found_table = None
-                for t in all_tables:
-                    if t_token in t.label.lower() or t_token in t.id.lower() or f"table {t_token}" in t.label.lower():
-                        found_table = t
-                        break
+                t_token = AIService._extract_table_token(msg_lower) or "1"
+                found_table = AIService._resolve_table(all_tables, t_token)
                 if found_table:
                     if found_table.status == TableStatus.OCCUPIED:
                         bill_str = f" with an active bill of ₹ {found_table.current_bill:,.2f}" if found_table.current_bill else ""
@@ -521,7 +762,7 @@ class AIService:
             elif intent == "QUERY_CANCELLED_ORDERS":
                 reply = f"There were {cancelled_orders_today} cancelled order(s) recorded today."
 
-            elif intent == "BUSINESS_STRATEGY":
+            elif intent == "BUSINESS_STRATEGY" and not settings.GROQ_API_KEY:
                 reply = (
                     f"📈 **5 Proven Strategies to Boost '{rest_name}' Business & Revenue:**\n\n"
                     f"1. **Menu Engineering & High-Margin Combos:** Bundle your top-selling appetizers and main curries into combo meals (e.g. Starter + Curry + Naan) to increase Average Order Value (AOV) by 15-20%.\n"
@@ -534,51 +775,72 @@ class AIService:
                 action_data = {"strategy_count": 5, "current_sales": float(today_sales), "registered_guests": total_customers}
 
             else:
-                # If conversational or unclassified and Gemini API key is available, call Gemini for rich reply
-                if settings.GEMINI_API_KEY:
+                # Route open-ended, analytical, strategy, guidance, and conversational queries to Groq LLM
+                if settings.GROQ_API_KEY:
                     try:
-                        system_prompt = f"""You are Chotu, an intelligent, respectful Indian restaurant operating assistant for '{rest_name}'.
-Live Real-Time Database Metrics:
-- Today's Total Sales: ₹ {today_sales:,.2f} ({today_settled_count} settled bills)
+                        aov_today = (today_sales / Decimal(today_settled_count)) if today_settled_count > 0 else Decimal("0.00")
+                        dinein_cnt = len([o for o in today_orders_all if o.mode == OrderMode.DINE_IN])
+                        takeaway_cnt = len([o for o in today_orders_all if o.mode == OrderMode.TAKEAWAY])
+                        delivery_cnt = len([o for o in today_orders_all if o.mode in (OrderMode.DELIVERY, OrderMode.ZOMATO, OrderMode.SWIGGY, OrderMode.UBEREATS, OrderMode.DOORDASH)])
+
+                        system_prompt = f"""You are Chotu, the dedicated AI Operations Copilot & Business Strategist for the restaurant '{rest_name}' (powered by Chotu Restro AI).
+
+STRICT SCOPE & ANTI-HALLUCINATION RULES:
+1. DOMAIN RESTRICTION: You MUST ONLY answer questions related to '{rest_name}', restaurant operations, sales/revenue analysis, business growth strategies, menu, inventory, kitchen/KDS, tables, delivery, staff, CRM/marketing, or guidance on how to use Chotu Restro AI.
+2. REFUSE OFF-TOPIC REQUESTS: If the user asks about anything unrelated to the restaurant or hospitality business (such as general trivia, coding, politics, sports, movies, weather, or unrelated personal advice), politely decline in 1–2 sentences and remind them you only assist with '{rest_name}' operations and business growth.
+3. ZERO HALLUCINATION: Use ONLY the live PostgreSQL metrics below for numbers, dishes, ingredients, and orders. Never invent figures, dish names, or statistics not listed below. If data is 0 or empty, state that honestly.
+4. ACTIONABLE STRATEGY & GUIDANCE: When asked to analyze patterns or grow business, cite the exact numbers below (AOV, top dishes, channel split, stock alerts) and give concrete, tailored recommendations. When asked how to use the system, guide the user clearly using the platform modules (POS Terminal, Floors & Tables, Kitchen KDS, Delivery Dispatch & Manager OTP, Menu & Recipe BOM, Inventory & Suppliers, Marketing Coupons, Revenue Analytics & Z-Reports, Settings).
+
+LIVE REAL-TIME DATABASE CONTEXT FOR '{rest_name}':
+- Today's Total Sales: ₹ {today_sales:,.2f} ({today_settled_count} settled bills, AOV: ₹ {aov_today:,.2f})
 - Yesterday's Total Sales: ₹ {yesterday_sales:,.2f} ({yesterday_settled_count} settled bills)
-- This Week's Total Revenue (Last 7 Days): ₹ {week_sales:,.2f} ({week_settled_count} settled bills)
+- Last 7 Days Revenue: ₹ {week_sales:,.2f} ({week_settled_count} settled bills)
+- Today's Channel Mix: {dinein_cnt} Dine-In, {takeaway_cnt} Takeaway, {delivery_cnt} Delivery/Aggregator orders
 - Top Selling Dishes (Last 7 Days): {', '.join(top_selling_dishes) if top_selling_dishes else 'No sales recorded this week'}
 - Low Stock Raw Ingredients: {', '.join(low_stock_names) if low_stock_names else 'All raw stock sufficient'}
 - Out of Stock Ingredients: {', '.join(out_of_stock_names) if out_of_stock_names else 'None'}
-- Total Raw Inventory Valuation: ₹ {total_valuation:,.2f}
+- Total Raw Inventory Valuation: ₹ {total_valuation:,.2f} ({len(all_ingredients)} ingredients)
 - Pending KOTs Cooking: {active_kots}
 - Orders Being Prepared: {len(preparing_orders)} ({', '.join(f'#{o.order_number}' for o in preparing_orders) if preparing_orders else 'None'})
 - Orders Ready: {len(ready_orders)} ({', '.join(f'#{o.order_number}' for o in ready_orders) if ready_orders else 'None'})
 - Occupied Tables: {occupied_tables}/{total_tables} ({', '.join(occupied_table_labels) if occupied_table_labels else 'None'})
 - Longest Waiting Table: {f'{longest_wait_table.label} ({longest_wait_minutes} mins wait)' if longest_wait_table else 'No tables waiting'}
+- Active Deliveries: {active_deliveries} | Pending Supplier POs: {pending_pos}
 - Cancelled Orders Today: {cancelled_orders_today}
-- Today's Unique Guest Count: {today_unique_guests}
-- Total CRM Registered Guests: {total_customers}
+- Today's Unique Guests: {today_unique_guests} | Total CRM Registered Guests: {total_customers}
+- Top Frequent Guests: {', '.join(top_cust_names) if top_cust_names else 'None yet'}
 - Unavailable Dishes (86'd / Inactive): {', '.join(unavailable_dish_names) if unavailable_dish_names else 'All catalog dishes available'}
 - Total Outstanding Unsettled Payments: ₹ {outstanding_payments:,.2f}
 
-Answer the staff question concisely, professionally, and warmly in a natural Indian hospitality tone (English, Hindi, or Hinglish matching the user).
-Answer based strictly on the factual database metrics above. Never hallucinate or invent numbers.
-"""
-                        gemini_contents = []
+Respond concisely, clearly, and warmly in English or Hinglish matching the user's language."""
+
+                        messages = [{"role": "system", "content": system_prompt}]
                         if conversation_history:
                             for turn in conversation_history[-6:]:
                                 t_role = getattr(turn, "role", None) if not isinstance(turn, dict) else turn.get("role")
                                 t_content = getattr(turn, "content", "") if not isinstance(turn, dict) else turn.get("content", "")
-                                gemini_role = "user" if t_role == "user" else "model"
-                                gemini_contents.append({"role": gemini_role, "parts": [{"text": t_content or ""}]})
-                        gemini_contents.append({"role": "user", "parts": [{"text": f"{system_prompt}\nUser Question: {message}"}]})
+                                messages.append({
+                                    "role": "user" if t_role == "user" else "assistant",
+                                    "content": t_content or ""
+                                })
+                        messages.append({"role": "user", "content": message})
 
-                        async with httpx.AsyncClient(timeout=10.0) as client:
-                            for model_name in ["gemini-3.5-flash", "gemini-flash-lite-latest"]:
+                        async with httpx.AsyncClient(timeout=20.0) as client:
+                            for model_name in [settings.GROQ_MODEL, "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]:
                                 try:
                                     resp = await client.post(
-                                        f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={settings.GEMINI_API_KEY}",
-                                        json={"contents": gemini_contents}
+                                        "https://api.groq.com/openai/v1/chat/completions",
+                                        headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
+                                        json={
+                                            "model": model_name,
+                                            "messages": messages,
+                                            "temperature": 0.1,
+                                            "max_tokens": 600,
+                                        }
                                     )
                                     if resp.status_code == 200:
                                         data = resp.json()
-                                        reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                                        reply = data["choices"][0]["message"]["content"].strip()
                                         break
                                 except Exception:
                                     continue

@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = _parse_cors_origins()
     
-    # Optional Gemini AI API Key
+    # Groq AI Configuration (Primary LLM) & Optional Gemini Fallback
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     
     model_config = SettingsConfigDict(

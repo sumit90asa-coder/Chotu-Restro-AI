@@ -84,3 +84,81 @@ async def test_chotu_ai_real_database_actions(db_session: Session):
     ).first()
     assert audit is not None
     assert "whatsapp" in audit.details
+
+
+@pytest.mark.asyncio
+async def test_chotu_ai_table_resolution_ignores_uuid_digits(db_session: Session):
+    """Ensure 'table 1' resolves to Table 1 even if Table 5 has '1' in its UUID."""
+    from app.models.restaurant import Restaurant
+    import uuid
+
+    rid = f"rest-tbl-test-{uuid.uuid4().hex[:6]}"
+    rest = Restaurant(
+        id=rid,
+        name="Table Test Kitchen",
+        code=f"TT-{uuid.uuid4().hex[:4]}",
+        address="123 Test St",
+        phone="9999999999",
+    )
+    t5 = DiningTable(id="tbl-55551111", restaurant_id=rid, label="Table 5", capacity=4, qr_token=f"qr-t5-{uuid.uuid4().hex[:6]}")
+    t1 = DiningTable(id="tbl-9999aaaa", restaurant_id=rid, label="Table 1", capacity=4, qr_token=f"qr-t1-{uuid.uuid4().hex[:6]}")
+    roti = MenuItem(
+        id=f"dish-roti-{uuid.uuid4().hex[:6]}",
+        restaurant_id=rid,
+        category_id="cat-breads-01",
+        name="Tandoori Roti",
+        price=30.00,
+        is_active=True,
+        is_in_stock=True,
+    )
+    db_session.add_all([rest, t5, t1, roti])
+    db_session.commit()
+
+    res = await AIService.chat(db_session, rid, "add 2 roti to table 1")
+    assert res.suggested_action == "ADD_ITEMS_TO_KOT"
+
+    db_session.refresh(t1)
+    db_session.refresh(t5)
+    assert t1.current_order_id is not None, "Table 1 should receive the order"
+    assert t5.current_order_id is None, "Table 5 must NOT receive Table 1's order"
+
+
+@pytest.mark.asyncio
+async def test_chotu_ai_update_table_status(db_session: Session):
+    """Ensure Chotu AI can update table statuses (occupied, reserved, billed, vacant)."""
+    from app.models.restaurant import Restaurant
+    from app.models.table import TableStatus
+    import uuid
+
+    rid = f"rest-status-test-{uuid.uuid4().hex[:6]}"
+    rest = Restaurant(
+        id=rid,
+        name="Status Test Kitchen",
+        code=f"ST-{uuid.uuid4().hex[:4]}",
+        address="123 Test St",
+        phone="9999999999",
+    )
+    t1 = DiningTable(id=f"tbl-1-{uuid.uuid4().hex[:6]}", restaurant_id=rid, label="Table 1", capacity=4, qr_token=f"qr-s1-{uuid.uuid4().hex[:6]}")
+    t2 = DiningTable(id=f"tbl-2-{uuid.uuid4().hex[:6]}", restaurant_id=rid, label="Table 2", capacity=4, qr_token=f"qr-s2-{uuid.uuid4().hex[:6]}")
+    db_session.add_all([rest, t1, t2])
+    db_session.commit()
+
+    # Set Table 1 to OCCUPIED
+    res_occ = await AIService.chat(db_session, rid, "set table 1 as occupied")
+    assert res_occ.suggested_action == "UPDATE_TABLE_STATUS"
+    db_session.refresh(t1)
+    assert t1.status == TableStatus.OCCUPIED
+    assert t1.current_order_id is not None
+
+    # Set Table 2 to RESERVED
+    res_res = await AIService.chat(db_session, rid, "reserve table 2")
+    assert res_res.suggested_action == "UPDATE_TABLE_STATUS"
+    db_session.refresh(t2)
+    assert t2.status == TableStatus.RESERVED
+
+    # Clear Table 1 back to VACANT
+    res_vac = await AIService.chat(db_session, rid, "clear table 1")
+    assert res_vac.suggested_action == "UPDATE_TABLE_STATUS"
+    db_session.refresh(t1)
+    assert t1.status == TableStatus.VACANT
+    assert t1.current_order_id is None
