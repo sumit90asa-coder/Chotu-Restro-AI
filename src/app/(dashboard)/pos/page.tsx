@@ -83,9 +83,9 @@ function PosContent() {
         if (Array.isArray(menuData)) setDishes(menuData);
         if (settingsData) {
           setTaxConfig({
-            cgst: Number(settingsData.cgst_percent ?? 2.5),
-            sgst: Number(settingsData.sgst_percent ?? 2.5),
-            serviceCharge: Number(settingsData.service_charge_percent ?? 5.0),
+            cgst: Number(settingsData.cgst_rate ?? 2.5),
+            sgst: Number(settingsData.sgst_rate ?? 2.5),
+            serviceCharge: Number(settingsData.service_charge_rate ?? 5.0),
           });
         }
       } catch (err) {
@@ -335,7 +335,7 @@ function PosContent() {
         <div className="space-y-4">
           {/* Printable Receipt Preview Card */}
           {settledInvoice ? (
-            <div id="printable-invoice" className="p-6 rounded-xl bg-stone-950 border border-stone-800 font-mono text-xs text-stone-300 space-y-3 print:border-none print:p-0">
+            <div id="printable-invoice" className="printable-area p-6 rounded-xl bg-stone-950 border border-stone-800 font-mono text-xs text-stone-300 space-y-3 print:border-none print:p-0">
               <div className="text-center space-y-0.5 border-b border-stone-800 pb-3">
                 <h2 className="text-base font-bold text-white uppercase">{user?.restaurantName || "CHOTU RESTRO AI"}</h2>
                 <p className="text-[10px] text-stone-400">Official Computerized Tax Invoice • Dine-In POS</p>
