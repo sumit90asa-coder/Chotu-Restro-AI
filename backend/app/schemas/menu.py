@@ -1,6 +1,6 @@
-from typing import List, Optional, Any
+from typing import List, Optional
 from decimal import Decimal
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 from app.models.table import TableStatus
 from app.models.menu import DietaryType, StationType
 
@@ -90,11 +90,11 @@ class MenuItemResponse(BaseModel):
     class Config:
         from_attributes = True
 
-    @model_validator(mode="after")
-    def set_bestseller(self) -> "MenuItemResponse":
-        if self.bestseller is None:
-            self.bestseller = self.is_bestseller
-        return self
+    @classmethod
+    def from_orm(cls, obj: Any) -> "MenuItemResponse":
+        inst = super().from_orm(obj)
+        inst.bestseller = inst.is_bestseller
+        return inst
 
 class MenuCategoryResponse(BaseModel):
     id: str

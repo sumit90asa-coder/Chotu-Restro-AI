@@ -1,11 +1,9 @@
-from datetime import datetime, timezone
 from typing import List, Optional
-from decimal import Decimal
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.session import get_db
-from app.models.order import Order, PlacedBy, OrderStatus, PaymentStatus, OrderMode
+from app.models.order import Order, PlacedBy, OrderStatus, PaymentStatus
 from app.models.table import DiningTable, TableStatus
 from app.schemas.order import OrderResponse, BillSettlementRequest
 from app.schemas.kot import KOTResponse
@@ -42,30 +40,8 @@ def get_table_order(
     if not table:
         raise HTTPException(status_code=404, detail="Table not found")
         
-    def empty_draft_order(t: DiningTable):
-        return OrderResponse(
-            id=f"draft-{t.id}",
-            restaurant_id=current_user.restaurant_id,
-            table_id=t.id,
-            order_number="DRAFT",
-            token_number="0",
-            customer_name="Walk-in Guest",
-            mode=OrderMode.DINE_IN,
-            status=OrderStatus.NEW,
-            payment_status=PaymentStatus.PENDING,
-            placed_by=PlacedBy.POS,
-            subtotal=Decimal("0.00"),
-            cgst=Decimal("0.00"),
-            sgst=Decimal("0.00"),
-            service_charge=Decimal("0.00"),
-            discount=Decimal("0.00"),
-            total_amount=Decimal("0.00"),
-            created_at=datetime.now(timezone.utc),
-            items=[]
-        )
-
     if not table.current_order_id:
-        return empty_draft_order(table)
+        return None
         
     order = db.query(Order).filter(
         Order.id == table.current_order_id,
@@ -78,7 +54,7 @@ def get_table_order(
         table.current_bill = Decimal("0.00")
         table.opened_at = None
         db.commit()
-        return empty_draft_order(table)
+        return None
         
     return order
 
