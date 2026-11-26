@@ -1,6 +1,7 @@
 import time
 import secrets
 import hashlib
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Header, Response
@@ -44,6 +45,19 @@ def get_table_by_token(token: str, db: Session) -> DiningTable:
         raise HTTPException(status_code=404, detail="Invalid or expired QR token")
         
     return table
+
+class QRAssistanceRequest(BaseModel):
+    service_type: str = "water"  # "water" | "waiter" | "bill"
+    notes: Optional[str] = None
+
+class QRAssistanceResponse(BaseModel):
+    success: bool = True
+    status: str = "acknowledged"
+    table_id: str
+    table_label: str
+    service_type: str
+    display_type: str = ""
+    message: str
 
 class QROrderSubmission(BaseModel):
     customer_name: str = "Guest (QR)"
@@ -297,3 +311,48 @@ async def submit_qr_order(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=f"Failed to submit QR order: {str(e)}")
+
+@router.post("/{token}/assistance", response_model=QRAssistanceResponse)
+async def request_table_assistance(
+    token: str,
+    req: QRAssistanceRequest,
+    db: Session = Depends(get_db)
+):
+    table = get_table_by_token(token, db)
+    
+    clean_type = req.service_type.lower().strip()
+    if "water" in clean_type:
+        display_type = "Water Service"
+        icon_type = "water"
+    elif "bill" in clean_type:
+        display_type = "Bill / Settlement Request"
+        icon_type = "bill"
+    else:
+        display_type = "Server Assistance"
+        icon_type = "waiter"
+
+    message_data = {
+        "table_id": table.id,
+        "table_label": table.label,
+        "floor_name": table.floor_name,
+        "service_type": icon_type,
+        "display_type": display_type,
+        "service_title": display_type,
+        "notes": req.notes,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+    await ws_manager.broadcast_to_restaurant(
+        table.restaurant_id,
+        create_ws_message(WSEventType.SERVICE_REQUEST, message_data)
+    )
+
+    return QRAssistanceResponse(
+        success=True,
+        status="acknowledged",
+        table_id=table.id,
+        table_label=table.label,
+        service_type=icon_type,
+        display_type=display_type,
+        message=f"{display_type} requested for {table.label}. Restaurant notified!"
+    )

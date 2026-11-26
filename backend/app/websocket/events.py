@@ -8,6 +8,7 @@ class WSEventType:
     TABLE_UPDATED = "TABLE_UPDATED"
     STOCK_UPDATED = "STOCK_UPDATED"
     DISH_STOCK_TOGGLED = "DISH_STOCK_TOGGLED"
+    SERVICE_REQUEST = "SERVICE_REQUEST"
 
 def create_ws_message(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
     return {

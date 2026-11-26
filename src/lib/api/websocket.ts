@@ -51,7 +51,16 @@ class WebSocketClient {
         if (event.data === "pong") return;
         try {
           const parsed = JSON.parse(event.data);
-          this.listeners.forEach((handler) => handler(parsed));
+          const rawEvent = parsed.event || parsed.type || "";
+          const normalized = {
+            ...parsed,
+            event: rawEvent,
+            type: parsed.type || (rawEvent ? String(rawEvent).toLowerCase() : ""),
+            data: parsed.data || parsed.payload || {},
+            payload: parsed.payload || parsed.data || {},
+            timestamp: parsed.timestamp || new Date().toISOString(),
+          };
+          this.listeners.forEach((handler) => handler(normalized));
         } catch {
           // Non-json frame
         }

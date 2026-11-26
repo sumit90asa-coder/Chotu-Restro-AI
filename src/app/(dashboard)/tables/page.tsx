@@ -58,6 +58,9 @@ export default function TablesPage() {
   const [activeOrder, setActiveOrder] = useState<ActiveOrderInfo | null>(null);
   const [loadingOrder, setLoadingOrder] = useState<boolean>(false);
 
+  // Table Assistance Requests Map (tableId -> alert)
+  const [tableAssistance, setTableAssistance] = useState<Record<string, { serviceType: string; displayType: string; notes?: string }>>({});
+
   // Status Change Modal
   const [showStatusModal, setShowStatusModal] = useState<boolean>(false);
   const [newStatus, setNewStatus] = useState<TableStatus>("vacant");
@@ -114,6 +117,28 @@ export default function TablesPage() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  const handleDismissTableAssistance = (tableId: string) => {
+    setTableAssistance((prev) => {
+      const next = { ...prev };
+      delete next[tableId];
+      return next;
+    });
+
+    try {
+      const stored = localStorage.getItem("chotu_service_alerts");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const filtered = parsed.filter((a: any) => a.tableId !== tableId);
+        localStorage.setItem("chotu_service_alerts", JSON.stringify(filtered));
+      }
+    } catch {}
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("chotu_service_cleared", { detail: { tableId } }));
+    }
+    showToast(`Service request acknowledged and marked served!`);
+  };
+
   const loadTables = async () => {
     setLoading(true);
     try {
@@ -136,20 +161,84 @@ export default function TablesPage() {
   useEffect(() => {
     loadTables();
 
+    // Load initial alerts from localStorage
+    try {
+      const stored = localStorage.getItem("chotu_service_alerts");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const map: Record<string, { serviceType: string; displayType: string; notes?: string }> = {};
+        parsed.forEach((a: any) => {
+          if (a.tableId) {
+            map[a.tableId] = {
+              serviceType: a.serviceType,
+              displayType: a.displayType,
+              notes: a.notes,
+            };
+          }
+        });
+        setTableAssistance(map);
+      }
+    } catch {}
+
     wsClient.connect();
-    const unsubscribe = wsClient.subscribe((evt) => {
+    const unsubscribe = wsClient.subscribe((evt: any) => {
+      const eventType = (evt?.event || evt?.type || "").toLowerCase();
       if (
-        evt.type === "table_updated" || 
-        evt.type === "order_created" || 
-        evt.type === "order_updated" ||
-        evt.type === "kot_created"
+        eventType === "table_updated" || 
+        eventType === "order_created" || 
+        eventType === "order_updated" ||
+        eventType === "kot_created"
       ) {
         loadTables();
+      } else if (eventType === "service_request") {
+        const data = evt.data || evt.payload || {};
+        if (data.table_id) {
+          setTableAssistance((prev) => ({
+            ...prev,
+            [data.table_id]: {
+              serviceType: data.service_type || "water",
+              displayType: data.display_type || (data.service_type === "water" ? "Water Service" : "Server Assistance"),
+              notes: data.notes || "",
+            },
+          }));
+          showToast(`🔔 ${data.table_label || "Table"}: ${data.display_type || "Assistance Requested"}`);
+        }
       }
     });
 
+    const handleWindowAlert = (e: any) => {
+      const alert = e.detail;
+      if (alert?.tableId) {
+        setTableAssistance((prev) => ({
+          ...prev,
+          [alert.tableId]: {
+            serviceType: alert.serviceType,
+            displayType: alert.displayType,
+            notes: alert.notes,
+          },
+        }));
+      }
+    };
+
+    const handleWindowClear = (e: any) => {
+      if (e.detail?.tableId) {
+        setTableAssistance((prev) => {
+          const next = { ...prev };
+          delete next[e.detail.tableId];
+          return next;
+        });
+      } else if (e.detail?.all) {
+        setTableAssistance({});
+      }
+    };
+
+    window.addEventListener("chotu_service_alert", handleWindowAlert);
+    window.addEventListener("chotu_service_cleared", handleWindowClear);
+
     return () => {
       unsubscribe();
+      window.removeEventListener("chotu_service_alert", handleWindowAlert);
+      window.removeEventListener("chotu_service_cleared", handleWindowClear);
     };
   }, []);
 
@@ -527,6 +616,33 @@ export default function TablesPage() {
                           </span>
                         </div>
                       </div>
+
+                      {/* Active Service / Water Assistance Badge */}
+                      {tableAssistance[tbl.id] && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className={`my-2 p-2 rounded-xl border flex items-center justify-between text-xs animate-pulse ${
+                            tableAssistance[tbl.id].serviceType === "water"
+                              ? "bg-sky-950/50 border-sky-500/60 text-sky-200"
+                              : "bg-amber-950/50 border-amber-500/60 text-amber-200"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <span>{tableAssistance[tbl.id].serviceType === "water" ? "💧" : "🔔"}</span>
+                            <span>{tableAssistance[tbl.id].displayType}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDismissTableAssistance(tbl.id);
+                            }}
+                            className="px-2 py-0.5 rounded-lg bg-stone-900 border border-stone-700 hover:bg-stone-800 text-[10px] font-bold text-stone-200 cursor-pointer"
+                          >
+                            Served ✓
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Quick Footer Action Prompt */}
@@ -629,6 +745,44 @@ export default function TablesPage() {
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Active Table Assistance Banner in Drawer */}
+            {tableAssistance[selectedTable.id] && (
+              <div
+                className={`my-4 p-3.5 rounded-2xl border flex items-center justify-between gap-3 animate-pulse ${
+                  tableAssistance[selectedTable.id].serviceType === "water"
+                    ? "bg-sky-950/60 border-sky-500/60 text-sky-200"
+                    : "bg-amber-950/60 border-amber-500/60 text-amber-200"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">
+                    {tableAssistance[selectedTable.id].serviceType === "water" ? "💧" : "🔔"}
+                  </span>
+                  <div>
+                    <span className="font-bold text-xs block text-white font-mono">
+                      {tableAssistance[selectedTable.id].displayType} Requested
+                    </span>
+                    <span className="text-[11px] text-stone-300">
+                      Guest is waiting at {selectedTable.label}
+                    </span>
+                    {tableAssistance[selectedTable.id].notes && (
+                      <p className="text-[10px] italic text-stone-400 mt-0.5">
+                        "{tableAssistance[selectedTable.id].notes}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDismissTableAssistance(selectedTable.id)}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500/25 hover:bg-emerald-500/40 border border-emerald-500/50 text-emerald-300 font-bold text-xs cursor-pointer flex items-center gap-1.5 flex-shrink-0"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Mark Served
+                </button>
+              </div>
+            )}
 
             {/* Table Operational State Body */}
             {selectedTable.status === "vacant" ? (

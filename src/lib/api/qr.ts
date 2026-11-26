@@ -72,3 +72,25 @@ export async function submitQROrder(token: string, payload: QROrderSubmission, s
     body: JSON.stringify(payload),
   });
 }
+
+export interface QRAssistanceResponse {
+  success: boolean;
+  table_id: string;
+  table_label: string;
+  service_type: string;
+  message: string;
+}
+
+export async function requestTableAssistance(
+  token: string,
+  serviceType: "water" | "waiter" | "bill" = "water",
+  notes?: string
+): Promise<QRAssistanceResponse> {
+  return await apiFetch<QRAssistanceResponse>(`/qr/${token}/assistance`, {
+    method: "POST",
+    body: JSON.stringify({
+      service_type: serviceType,
+      notes,
+    }),
+  });
+}

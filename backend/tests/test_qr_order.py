@@ -126,3 +126,43 @@ def test_table_qr_regeneration_flow(client, db_session):
     resp_new = client.get(f"/api/v1/qr/{new_token}/table")
     assert resp_new.status_code == 200
     assert resp_new.json()["table_id"] == "T-03"
+
+
+def test_qr_assistance_requests(client):
+    """
+    CRITICAL RESTAURANT SCREEN NOTIFICATION TEST:
+    Verify guests can request water service or waiter assistance from QR token,
+    and server acknowledges request with exact table identification.
+    """
+    # 1. Request water service for T-01
+    resp_water = client.post(
+        "/api/v1/qr/qr-t01-demo/assistance",
+        json={"service_type": "water", "notes": "Cold water please"}
+    )
+    assert resp_water.status_code == 200
+    data_water = resp_water.json()
+    assert data_water["status"] == "acknowledged"
+    assert data_water["service_type"] == "water"
+    assert data_water["table_id"] == "T-01"
+    assert "T-01" in data_water["message"]
+    assert "Water Service" in data_water["message"]
+
+    # 2. Request waiter assistance for T-02
+    resp_waiter = client.post(
+        "/api/v1/qr/qr-t02-demo/assistance",
+        json={"service_type": "waiter"}
+    )
+    assert resp_waiter.status_code == 200
+    data_waiter = resp_waiter.json()
+    assert data_waiter["status"] == "acknowledged"
+    assert data_waiter["service_type"] == "waiter"
+    assert data_waiter["table_id"] == "T-02"
+    assert "T-02" in data_waiter["message"]
+    assert "Server Assistance" in data_waiter["message"]
+
+    # 3. Invalid token returns 404
+    resp_invalid = client.post(
+        "/api/v1/qr/invalid-token-xyz/assistance",
+        json={"service_type": "water"}
+    )
+    assert resp_invalid.status_code == 404

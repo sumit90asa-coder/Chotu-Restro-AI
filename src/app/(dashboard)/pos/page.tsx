@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/pos";
 import { fetchRestaurantSettings } from "@/lib/api/settings";
 import { useAuth } from "@/lib/context/AuthContext";
+import { wsClient } from "@/lib/api/websocket";
 import { Printer, CheckCircle2, QrCode, CreditCard, Banknote, ShieldCheck } from "lucide-react";
 
 function PosContent() {
@@ -91,7 +92,32 @@ function PosContent() {
       }
     }
     loadInitialData();
-  }, [tableParam]);
+
+    wsClient.connect(user?.restaurantId);
+    const unsubscribe = wsClient.subscribe((evt: any) => {
+      const eventType = (evt?.event || evt?.type || "").toLowerCase();
+      if (eventType === "service_request") {
+        const data = evt.data || evt.payload || {};
+        const icon = data.service_type === "water" ? "💧" : "🔔";
+        showToast(`${icon} Service Call: ${data.table_label || "Table"} requested ${data.display_type || "Assistance"}!`);
+      }
+    });
+
+    const handleWindowAlert = (e: any) => {
+      const alert = e.detail;
+      if (alert) {
+        const icon = alert.serviceType === "water" ? "💧" : "🔔";
+        showToast(`${icon} Service Call: ${alert.tableLabel} requested ${alert.displayType}!`);
+      }
+    };
+
+    window.addEventListener("chotu_service_alert", handleWindowAlert);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener("chotu_service_alert", handleWindowAlert);
+    };
+  }, [tableParam, user?.restaurantId]);
 
   // Fetch or sync table order
   useEffect(() => {
