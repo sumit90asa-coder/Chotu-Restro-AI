@@ -67,6 +67,8 @@ async def update_menu_item(
         dish.is_in_stock = update_data.is_in_stock
     if update_data.price is not None:
         dish.price = update_data.price
+    if update_data.is_bestseller is not None:
+        dish.is_bestseller = update_data.is_bestseller
         
     db.commit()
     db.refresh(dish)

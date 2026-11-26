@@ -16,12 +16,23 @@ import {
   Check, 
   ToggleLeft, 
   ToggleRight, 
-  AlertCircle,
-  Filter,
-  DollarSign,
-  RefreshCw,
-  Image as ImageIcon
+  AlertCircle, 
+  Filter, 
+  DollarSign, 
+  RefreshCw, 
+  Star, 
+  Package, 
+  Trash2, 
+  Image as ImageIcon 
 } from "lucide-react";
+import {
+  fetchIngredients,
+  fetchDishRecipes,
+  linkRecipeIngredient,
+  unlinkRecipeIngredient,
+  IngredientStock,
+  DishRecipeItem
+} from "@/lib/api/inventory";
 
 export default function MenuManagementPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -41,6 +52,65 @@ export default function MenuManagementPage() {
     preparation_time_minutes: 15,
   });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Recipe BOM Modal State
+  const [recipeModalDish, setRecipeModalDish] = useState<MenuItem | null>(null);
+  const [dishRecipes, setDishRecipes] = useState<DishRecipeItem[]>([]);
+  const [allIngredients, setAllIngredients] = useState<IngredientStock[]>([]);
+  const [selectedIngredientId, setSelectedIngredientId] = useState<string>("");
+  const [recipeQuantity, setRecipeQuantity] = useState<string>("0.100");
+  const [isLinkingRecipe, setIsLinkingRecipe] = useState<boolean>(false);
+
+  const openRecipeModal = async (dish: MenuItem) => {
+    setRecipeModalDish(dish);
+    try {
+      const [recs, ings] = await Promise.all([
+        fetchDishRecipes(dish.id).catch(() => []),
+        fetchIngredients().catch(() => []),
+      ]);
+      setDishRecipes(recs);
+      setAllIngredients(ings);
+      if (ings.length > 0) {
+        setSelectedIngredientId(ings[0].id);
+      }
+    } catch {
+      showToast("Error loading recipe data");
+    }
+  };
+
+  const handleLinkIngredient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recipeModalDish || !selectedIngredientId) return;
+    const qty = parseFloat(recipeQuantity);
+    if (isNaN(qty) || qty <= 0) {
+      showToast("Quantity must be greater than zero");
+      return;
+    }
+    setIsLinkingRecipe(true);
+    try {
+      await linkRecipeIngredient(recipeModalDish.id, selectedIngredientId, qty);
+      showToast("Raw ingredient linked to recipe!");
+      const updated = await fetchDishRecipes(recipeModalDish.id);
+      setDishRecipes(updated);
+      setRecipeQuantity("0.100");
+    } catch (err: any) {
+      showToast(err.message || "Failed to link ingredient");
+    } finally {
+      setIsLinkingRecipe(false);
+    }
+  };
+
+  const handleUnlinkIngredient = async (recipeItemId: string) => {
+    if (!recipeModalDish) return;
+    try {
+      await unlinkRecipeIngredient(recipeItemId);
+      showToast("Recipe link removed");
+      const updated = await fetchDishRecipes(recipeModalDish.id);
+      setDishRecipes(updated);
+    } catch (err: any) {
+      showToast(err.message || "Failed to remove recipe link");
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -70,9 +140,24 @@ export default function MenuManagementPage() {
     setItems((prev) =>
       prev.map((it) => (it.id === dishId ? { ...it, inStock: next } : it))
     );
-    showToast(`${item.name} is now marked ${next ? "IN STOCK" : "86'd / OUT OF STOCK"}`);
+    showToast(`${item.name} is now marked ${next ? "IN STOCK" : "OUT OF STOCK"}`);
     try {
       await updateMenuItem(dishId, { inStock: next });
+    } catch {
+      // keep local update
+    }
+  };
+
+  const toggleBestseller = async (dishId: string) => {
+    const item = items.find((i) => i.id === dishId);
+    if (!item) return;
+    const next = !item.bestseller;
+    setItems((prev) =>
+      prev.map((it) => (it.id === dishId ? { ...it, bestseller: next } : it))
+    );
+    showToast(`${item.name} ${next ? "marked as Chef's Pick ⭐" : "removed from Chef's Pick"}`);
+    try {
+      await updateMenuItem(dishId, { bestseller: next });
     } catch {
       // keep local update
     }
@@ -238,11 +323,19 @@ export default function MenuManagementPage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-white text-xs">{dish.name}</span>
-                            {dish.bestseller && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                Bestseller
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleBestseller(dish.id)}
+                              className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                                dish.bestseller
+                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30 font-semibold"
+                                  : "bg-stone-900 border-stone-800 text-stone-500 hover:text-stone-300"
+                              }`}
+                              title={dish.bestseller ? "Click to remove Chef's Pick" : "Click to set as Chef's Pick"}
+                            >
+                              <Star className={`w-2.5 h-2.5 ${dish.bestseller ? "fill-amber-400 text-amber-400" : ""}`} />
+                              <span>{dish.bestseller ? "Chef's Pick" : "Set Chef's Pick"}</span>
+                            </button>
                           </div>
                           <p className="text-[11px] text-stone-400 line-clamp-1 mt-0.5">
                             {dish.description}
@@ -270,17 +363,26 @@ export default function MenuManagementPage() {
                         title="Click to toggle stock availability"
                       >
                         <span className={`w-2 h-2 rounded-full ${dish.inStock ? "bg-emerald-400" : "bg-rose-400"}`} />
-                        <span>{dish.inStock ? "Available" : "86'd (Out of Stock)"}</span>
+                        <span>{dish.inStock ? "Available" : "Out of Stock"}</span>
                       </button>
                     </td>
                     <td className="px-4 py-4 text-right">
-                      <button
-                        onClick={() => setEditItemModal(dish)}
-                        className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-stone-800 text-stone-300 hover:text-white transition-colors cursor-pointer"
-                        title="Edit Dish Pricing"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => openRecipeModal(dish)}
+                          className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-stone-800 text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                          title="Connect Raw Materials (Recipe BOM)"
+                        >
+                          <Package className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setEditItemModal(dish)}
+                          className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-stone-800 text-stone-300 hover:text-white transition-colors cursor-pointer"
+                          title="Edit Dish Pricing"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -459,6 +561,100 @@ export default function MenuManagementPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Recipe (BOM) Management Modal */}
+      {recipeModalDish && (
+        <Modal
+          isOpen={Boolean(recipeModalDish)}
+          onClose={() => setRecipeModalDish(null)}
+          title={`Recipe & Raw Material Mapping: ${recipeModalDish.name}`}
+          description="Map raw inventory ingredients to auto-deduct stock upon kitchen KOT transmission"
+          maxWidth="lg"
+        >
+          <div className="space-y-5">
+            {/* Connected Ingredients List */}
+            <div>
+              <h4 className="text-xs font-semibold uppercase font-mono tracking-wider text-stone-400 mb-2">
+                Connected Raw Materials ({dishRecipes.length})
+              </h4>
+              {dishRecipes.length === 0 ? (
+                <div className="p-4 rounded-xl bg-stone-900/60 border border-dashed border-stone-800 text-center text-xs text-stone-400">
+                  No raw materials linked yet. Connect ingredients below to enable auto-deduction.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {dishRecipes.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Package className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="font-semibold text-white">{r.ingredient_name}</span>
+                        <span className="text-stone-400 font-mono">
+                          ({r.quantity_required} {r.unit} / serving)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleUnlinkIngredient(r.id)}
+                        className="p-1 rounded-lg hover:bg-rose-950/60 text-stone-500 hover:text-rose-400 transition-colors"
+                        title="Remove ingredient link"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Link New Raw Material Form */}
+            <form onSubmit={handleLinkIngredient} className="p-4 rounded-xl bg-stone-900/90 border border-stone-800 space-y-3">
+              <h5 className="text-xs font-semibold text-stone-300">Link Raw Material to Dish</h5>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] text-stone-400 mb-1">Select Ingredient</label>
+                  <select
+                    value={selectedIngredientId}
+                    onChange={(e) => setSelectedIngredientId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs focus:outline-none focus:border-[#E07A5F]"
+                  >
+                    {allIngredients.map((ing) => (
+                      <option key={ing.id} value={ing.id}>
+                        {ing.name} ({ing.unit}) — Available: {ing.current_stock}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-stone-400 mb-1">Quantity per Serving</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0.001"
+                    required
+                    value={recipeQuantity}
+                    onChange={(e) => setRecipeQuantity(e.target.value)}
+                    placeholder="e.g. 0.200"
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-white text-xs font-mono focus:outline-none focus:border-[#E07A5F]"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  disabled={isLinkingRecipe || allIngredients.length === 0}
+                  className="px-4 py-2 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isLinkingRecipe ? "Linking..." : "Connect Raw Material"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </Modal>
+      )}
 
       {/* Floating toast */}
       {toastMessage && (

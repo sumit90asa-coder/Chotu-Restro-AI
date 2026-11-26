@@ -1,8 +1,10 @@
+import re
 from datetime import datetime, timezone
 import httpx
 from decimal import Decimal
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from app.core.config import settings
 import json
 import uuid
@@ -116,6 +118,8 @@ Never invent financial or inventory metrics not in this context.
             intent = "QUERY_INVENTORY_VALUATION"
         elif "stock" in msg_lower or "inventory" in msg_lower or "ingredient" in msg_lower:
             intent = "QUERY_INVENTORY"
+        elif any(k in msg_lower for k in ["strateg", "growth", "increase business", "sales badhaye", "improve revenue", "tips", "badaun", "tarika"]):
+            intent = "BUSINESS_STRATEGY"
         elif "kitchen" in msg_lower or "kot" in msg_lower or "prep" in msg_lower:
             intent = "QUERY_KITCHEN"
 
@@ -186,11 +190,25 @@ Never invent financial or inventory metrics not in this context.
                 }
 
             elif intent == "ADD_ITEMS":
-                # Find Table 4 or first available table
-                target_table = db.query(DiningTable).filter(
-                    DiningTable.restaurant_id == restaurant_id,
-                    (DiningTable.label.ilike("%4%") | DiningTable.id.ilike("%4%"))
-                ).first() or db.query(DiningTable).filter(DiningTable.restaurant_id == restaurant_id).first()
+                # Dynamically extract table identifier from query (e.g. "Table 2", "T-03", "table 1")
+                target_table = None
+                table_match = re.search(r'(?:table|tbl|t)\s*[-_#]?\s*(\d+|[a-zA-Z]\d*)', msg_lower)
+                if table_match:
+                    t_token = table_match.group(1).lstrip("0") or "1"
+                    target_table = db.query(DiningTable).filter(
+                        DiningTable.restaurant_id == restaurant_id,
+                        or_(
+                            DiningTable.label.ilike(f"%{t_token}%"),
+                            DiningTable.id.ilike(f"%{t_token}%"),
+                            DiningTable.label.ilike(f"%T-{t_token}%"),
+                            DiningTable.label.ilike(f"%Table {t_token}%")
+                        )
+                    ).first()
+
+                if not target_table:
+                    target_table = db.query(DiningTable).filter(
+                        DiningTable.restaurant_id == restaurant_id
+                    ).first()
 
                 if not target_table:
                     reply = "No dining table found for this restaurant."
@@ -230,6 +248,18 @@ Never invent financial or inventory metrics not in this context.
                     else:
                         reply = "Could not find requested dish in menu catalog."
                         suggested_action = "ADD_ITEMS_TO_KOT"
+
+            elif intent == "BUSINESS_STRATEGY":
+                reply = (
+                    f"📈 **5 Proven Strategies to Boost '{rest_name}' Business & Revenue:**\n\n"
+                    f"1. **Menu Engineering & High-Margin Combos:** Bundle your top-selling appetizers and main curries into combo meals (e.g. Starter + Curry + Naan) to increase Average Order Value (AOV) by 15-20%.\n"
+                    f"2. **Faster Table Turns via QR Ordering:** Digital QR self-ordering on tables reduces order placement time by 6–8 minutes, enabling 1 extra seating rotation per table during peak lunch and dinner hours.\n"
+                    f"3. **Customer Retention (CRM Loyalty):** Re-engage your {total_customers} registered guests with targeted WhatsApp promos offering a 10% weekday return dining discount.\n"
+                    f"4. **Dynamic Happy Hours:** Offer 15% discount vouchers during afternoon lull hours (3:00 PM – 6:00 PM) to maintain kitchen asset utilization without diluting peak dinner pricing.\n"
+                    f"5. **0% Commission Direct Delivery:** Promote your direct QR menu and website for takeaway and pickup to save the 20–25% aggregator commission fees on third-party platforms."
+                )
+                suggested_action = "VIEW_GROWTH_INSIGHTS"
+                action_data = {"strategy_count": 5, "current_sales": float(today_sales), "registered_guests": total_customers}
 
             elif intent == "QUERY_SALES":
                 reply = f"Today's total settled sales are ₹ {today_sales:,.2f} across {len(today_paid_orders)} settled bills."

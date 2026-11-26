@@ -1,5 +1,15 @@
 function resolveApiBaseUrl(raw: string | undefined): string {
-  let url = raw?.trim() || "http://127.0.0.1:8000/api/v1";
+  let url = raw?.trim();
+  if (url && url.includes("chotu-backend-jknt")) {
+    url = url.replace("chotu-backend-jknt", "chotu-backend-o8wn");
+  }
+  if (!url) {
+    if (typeof window !== "undefined" && window.location.hostname.includes("onrender.com")) {
+      url = "https://chotu-backend-o8wn.onrender.com/api/v1";
+    } else {
+      url = "http://127.0.0.1:8000/api/v1";
+    }
+  }
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     if (url.includes("onrender.com")) {
       url = `https://${url}`;

@@ -70,10 +70,10 @@ export async function deleteTable(tableId: string): Promise<{ success: boolean; 
   });
 }
 
-export async function updateTableStatus(tableId: string, status: TableStatus): Promise<Table> {
+export async function updateTableStatus(tableId: string, status: TableStatus, captainName?: string): Promise<Table> {
   const data = await apiFetch<BackendTable>(`/tables/${tableId}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, captain_name: captainName }),
   });
   return mapBackendTable(data);
 }

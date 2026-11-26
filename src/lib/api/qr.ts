@@ -8,6 +8,9 @@ export interface QRMenuResponse {
   table_label: string;
   table_status?: string;
   items: BackendMenuItem[];
+  cgst_percent?: number;
+  sgst_percent?: number;
+  service_charge_percent?: number;
 }
 
 export interface QRTableInfo {

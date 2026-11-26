@@ -74,17 +74,98 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}
+
+export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState<boolean>(false);
 
   return (
-    <aside
-      className={`relative flex flex-col h-screen border-r border-stone-800/80 bg-[#141211] text-stone-300 transition-all duration-300 z-30 select-none ${
-        collapsed ? "w-20" : "w-64"
-      }`}
-    >
+    <>
+      {/* Mobile Drawer Overlay */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+            onClick={onCloseMobile}
+          />
+          <aside className="relative flex flex-col w-72 h-full bg-[#141211] border-r border-stone-800 z-10 shadow-2xl">
+            <div className="flex items-center justify-between px-4 h-16 border-b border-stone-800 bg-[#191615]">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#E07A5F] to-[#F4A261] flex items-center justify-center text-white font-bold shadow-md">
+                  <Flame className="w-4 h-4 text-white" />
+                </div>
+                <span className="font-bold text-sm text-white">Chotu Restro AI</span>
+              </div>
+              <button
+                type="button"
+                onClick={onCloseMobile}
+                className="p-2 text-stone-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+              {NAV_GROUPS.map((group) => (
+                <div key={group.label} className="space-y-1">
+                  <p className="px-3 text-[10px] font-semibold text-stone-500 tracking-wider uppercase font-mono mb-1.5">
+                    {group.label}
+                  </p>
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={onCloseMobile}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                          isActive
+                            ? "bg-[#E07A5F]/15 text-[#F4A261] font-semibold border border-[#E07A5F]/30"
+                            : "text-stone-400 hover:text-stone-100 hover:bg-stone-800/50"
+                        }`}
+                      >
+                        <Icon className={`w-4 h-4 ${isActive ? "text-[#E07A5F]" : "text-stone-400"}`} />
+                        <span className="flex-1">{item.name}</span>
+                        {item.badge && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-[#E07A5F]/20 text-[#E07A5F]">
+                            {item.badge}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 border-t border-stone-800 bg-[#161413]">
+              <button
+                onClick={() => {
+                  if (onCloseMobile) onCloseMobile();
+                  logout();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Log Out</span>
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* Desktop Persistent Sidebar */}
+      <aside
+        className={`hidden md:flex relative flex-col h-screen border-r border-stone-800/80 bg-[#141211] text-stone-300 transition-all duration-300 z-30 select-none ${
+          collapsed ? "w-20" : "w-64"
+        }`}
+      >
       {/* Brand Header */}
       <div className={`flex items-center ${collapsed ? "justify-center px-2 relative" : "justify-between px-4"} h-16 border-b border-stone-800/80 bg-[#191615]`}>
         <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden" title={collapsed ? "Chotu Restro AI" : undefined}>
@@ -185,5 +266,6 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }

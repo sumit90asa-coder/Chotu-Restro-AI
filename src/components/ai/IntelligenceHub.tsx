@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   TrendingUp,
@@ -24,6 +25,7 @@ import {
 import { fetchAnalyticsOverview, AnalyticsOverview } from "@/lib/api/analytics";
 
 export const IntelligenceHub: React.FC = () => {
+  const router = useRouter();
   const [poSent, setPoSent] = useState<boolean>(false);
   const [promoSent, setPromoSent] = useState<boolean>(false);
   const [deliveryThrottled, setDeliveryThrottled] = useState<boolean>(false);
@@ -127,17 +129,17 @@ export const IntelligenceHub: React.FC = () => {
             </p>
           </div>
           <div className="text-xs font-mono text-ink-secondary">
-            Gross Tracked: <strong className="text-ink">₹ 42,850.00</strong> (76 Orders)
+            Gross Tracked: <strong className="text-ink">₹ {todayRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> ({analytics?.completed_orders_today ?? (todayRevenue > 0 ? 1 : 0)} Orders)
           </div>
         </div>
 
         {/* Visual Segmented Proportional Bar */}
         <div className="space-y-2">
           <div className="h-4 w-full bg-canvas-subtle border border-border flex overflow-hidden">
-            {CHANNEL_SALES_SPLIT.map((item) => (
+            {channelSales.map((item) => (
               <div
                 key={item.channel}
-                style={{ width: `${item.percentage}%` }}
+                style={{ width: `${item.percentage || 33.3}%` }}
                 className={`h-full transition-all duration-300 relative group ${
                   item.channel === "store"
                     ? "bg-ink"
@@ -145,24 +147,18 @@ export const IntelligenceHub: React.FC = () => {
                     ? "bg-accent"
                     : "bg-dietary-veg"
                 }`}
-                title={`${item.label}: ${item.percentage}%`}
+                title={`${item.label}: ${item.percentage || 0}%`}
               />
             ))}
           </div>
 
           <div className="flex items-center justify-between text-xs font-mono text-ink-secondary pt-1 flex-wrap gap-3">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-ink inline-block"></span>
-              <span>Store Sales: <strong className="text-ink">52.5%</strong></span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-accent inline-block"></span>
-              <span>Online Aggregators: <strong className="text-ink">33.5%</strong></span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-dietary-veg inline-block"></span>
-              <span>Direct Site &amp; QR: <strong className="text-ink">14.0%</strong></span>
-            </div>
+            {channelSales.map((c) => (
+              <div key={c.channel} className="flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 inline-block ${c.channel === "store" ? "bg-ink" : c.channel === "aggregators" ? "bg-accent" : "bg-dietary-veg"}`} />
+                <span>{c.label}: <strong className="text-ink">{c.percentage || 0}%</strong></span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -439,16 +435,19 @@ export const IntelligenceHub: React.FC = () => {
             </div>
 
             <button
-              onClick={() => setPoSent(true)}
-              className="w-full py-2 bg-canvas hover:bg-canvas-subtle border border-border text-xs text-ink font-medium transition-colors flex items-center justify-center gap-1.5"
+              onClick={() => {
+                setPoSent(true);
+                router.push("/inventory");
+              }}
+              className="w-full py-2 bg-canvas hover:bg-canvas-subtle border border-border text-xs text-ink font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {poSent ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-dietary-veg" />
-                  <span>Order Dispatched (Blinkit B2B)</span>
+                  <span>Opening Stock & PO Ledger →</span>
                 </>
               ) : (
-                <span>Auto Purchase Order</span>
+                <span>Manage Stock &amp; POs →</span>
               )}
             </button>
           </div>
@@ -467,21 +466,24 @@ export const IntelligenceHub: React.FC = () => {
               <h4 className="font-bold text-base text-ink">Surplus Dum Biryani Handis</h4>
 
               <p className="text-xs text-ink-secondary leading-relaxed">
-                12 portions of slow-cooked mutton biryani remain unsold. Suggest sending a 15% discount WhatsApp deal to 120 regular guests nearby.
+                Portions remain unsold. Suggest creating a 15% discount promo code to re-engage registered guests.
               </p>
             </div>
 
             <button
-              onClick={() => setPromoSent(true)}
-              className="w-full py-2 bg-canvas hover:bg-canvas-subtle border border-border text-xs text-ink font-medium transition-colors flex items-center justify-center gap-1.5"
+              onClick={() => {
+                setPromoSent(true);
+                router.push("/marketing");
+              }}
+              className="w-full py-2 bg-canvas hover:bg-canvas-subtle border border-border text-xs text-ink font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {promoSent ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-dietary-veg" />
-                  <span>WhatsApp Campaign Sent</span>
+                  <span>Opening Marketing Hub →</span>
                 </>
               ) : (
-                <span>Dispatch WhatsApp Deal (120 Guests)</span>
+                <span>Launch Promo Campaign →</span>
               )}
             </button>
           </div>
@@ -500,21 +502,24 @@ export const IntelligenceHub: React.FC = () => {
               <h4 className="font-bold text-base text-ink">Tandoor Clay Oven Queue</h4>
 
               <p className="text-xs text-ink-secondary leading-relaxed">
-                14 Naan &amp; Roti breads in queue. Suggest pausing online bread delivery for 20 mins to prioritize seated dine-in guests.
+                Multiple Naan &amp; Roti breads in queue. Check real-time KDS tickets to prioritize seated guests.
               </p>
             </div>
 
             <button
-              onClick={() => setDeliveryThrottled(true)}
-              className="w-full py-2 bg-canvas hover:bg-canvas-subtle border border-border text-xs text-ink font-medium transition-colors flex items-center justify-center gap-1.5"
+              onClick={() => {
+                setDeliveryThrottled(true);
+                router.push("/kds");
+              }}
+              className="w-full py-2 bg-canvas hover:bg-canvas-subtle border border-border text-xs text-ink font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {deliveryThrottled ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-dietary-veg" />
-                  <span>Online Delivery Throttled</span>
+                  <span>Opening Kitchen KDS →</span>
                 </>
               ) : (
-                <span>Throttle Online Bread Orders</span>
+                <span>Open Kitchen Display (KDS) →</span>
               )}
             </button>
           </div>

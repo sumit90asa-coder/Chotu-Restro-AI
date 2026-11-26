@@ -37,7 +37,7 @@ interface ConfirmedOrder {
   totalAmount: number;
   itemsCount: number;
   placedAt: string;
-  status: "queued" | "preparing" | "ready";
+  status: "queued" | "preparing" | "ready" | "served";
 }
 
 interface CustomerMenuProps {
@@ -72,6 +72,11 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmedOrder, setConfirmedOrder] = useState<ConfirmedOrder | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [taxConfig, setTaxConfig] = useState<{ cgst: number; sgst: number; serviceCharge: number }>({
+    cgst: 2.5,
+    sgst: 2.5,
+    serviceCharge: 0.0,
+  });
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -90,6 +95,13 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
       ]);
       if (data && Array.isArray(data.items)) {
         setDishes(data.items.map(mapBackendMenuItem));
+        if (data.cgst_percent !== undefined) {
+          setTaxConfig({
+            cgst: Number(data.cgst_percent ?? 2.5),
+            sgst: Number(data.sgst_percent ?? 2.5),
+            serviceCharge: Number(data.service_charge_percent ?? 0.0),
+          });
+        }
         if (onMenuLoaded) {
           onMenuLoaded(data);
         }
@@ -103,13 +115,17 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
             localStorage.setItem(sessionKey, activeOrd.customer_session_token);
           } catch {}
         }
+        const rawStatus = (activeOrd.status || "preparing").toLowerCase();
+        const mappedStatus: ConfirmedOrder["status"] =
+          rawStatus === "ready" ? "ready" : rawStatus === "served" ? "served" : "preparing";
+
         const confirmed: ConfirmedOrder = {
           tokenNumber: activeOrd.token_number || activeOrd.id,
           orderNumber: activeOrd.order_number || `${tableLabel}`,
           totalAmount: Number(activeOrd.total_amount || 0),
           itemsCount: activeOrd.items ? activeOrd.items.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0) : 0,
           placedAt: activeOrd.created_at ? new Date(activeOrd.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Active",
-          status: "preparing",
+          status: mappedStatus,
         };
         setConfirmedOrder(confirmed);
         try {
@@ -147,6 +163,25 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
       loadMenu();
     }
   }, [token]);
+
+  // Live order status polling (Kitchen Bump sync)
+  useEffect(() => {
+    if (!confirmedOrder || confirmedOrder.status === "served") return;
+    const sessionKey = `chotu_customer_session_${token}`;
+    const sessionToken = typeof window !== "undefined" ? localStorage.getItem(sessionKey) : null;
+    const pollInterval = setInterval(async () => {
+      try {
+        const active = await fetchCurrentQROrder(token, sessionToken);
+        if (active && active.status) {
+          const rawSt = String(active.status).toLowerCase();
+          const nextStatus: ConfirmedOrder["status"] =
+            rawSt === "ready" ? "ready" : rawSt === "served" ? "served" : "preparing";
+          setConfirmedOrder((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+        }
+      } catch {}
+    }, 6000);
+    return () => clearInterval(pollInterval);
+  }, [confirmedOrder?.status, token]);
 
   // Cart Operations
   const handleAddDish = (dish: MenuItem, note?: string) => {
@@ -187,8 +222,10 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
   // Calculations
   const totalItemsCount = cart.reduce((acc, i) => acc + i.qty, 0);
   const subtotal = cart.reduce((acc, i) => acc + i.dish.price * i.qty, 0);
-  const gst = subtotal * 0.05; // 5% GST
-  const grandTotal = subtotal + gst;
+  const totalGstPercent = Number(taxConfig.cgst) + Number(taxConfig.sgst);
+  const gst = subtotal * (totalGstPercent / 100);
+  const serviceCharge = subtotal * (Number(taxConfig.serviceCharge) / 100);
+  const grandTotal = subtotal + gst + serviceCharge;
 
   // Filter Dishes
   const filteredDishes = dishes.filter((dish) => {
@@ -361,15 +398,27 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
           <div className="p-3.5 rounded-2xl bg-stone-900/80 border border-stone-800 space-y-2">
             <div className="flex items-center justify-between text-xs font-mono">
               <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-                <Check className="w-3.5 h-3.5" /> Order Received
+                <Check className="w-3.5 h-3.5" /> Placed
               </span>
-              <span className="flex items-center gap-1.5 text-[#F4A261] font-bold animate-pulse">
-                <Flame className="w-3.5 h-3.5" /> Cooking on Pass
+              <span className={`flex items-center gap-1.5 font-bold ${
+                confirmedOrder.status === "preparing" ? "text-[#F4A261] animate-pulse" : "text-emerald-400"
+              }`}>
+                {confirmedOrder.status === "preparing" ? <Flame className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                <span>{confirmedOrder.status === "preparing" ? "Cooking" : "Prepared"}</span>
               </span>
-              <span className="text-stone-500">Ready to Serve</span>
+              <span className={`flex items-center gap-1.5 font-bold ${
+                confirmedOrder.status === "ready" ? "text-emerald-300 animate-pulse font-extrabold" : confirmedOrder.status === "served" ? "text-emerald-400" : "text-stone-500"
+              }`}>
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{confirmedOrder.status === "ready" ? "Food Prepared • Serving!" : confirmedOrder.status === "served" ? "Served" : "Ready to Serve"}</span>
+              </span>
             </div>
             <div className="w-full h-1.5 rounded-full bg-stone-800 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-emerald-500 to-[#F4A261] w-2/3" />
+              <div className={`h-full transition-all duration-500 ${
+                confirmedOrder.status === "ready" || confirmedOrder.status === "served"
+                  ? "w-full bg-emerald-500"
+                  : "w-2/3 bg-gradient-to-r from-emerald-500 to-[#F4A261]"
+              }`} />
             </div>
           </div>
 
@@ -596,7 +645,7 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
                 </span>
                 <span className="text-sm font-bold text-white font-mono">₹{grandTotal.toFixed(2)}</span>
               </div>
-              <p className="text-[10px] text-stone-400 font-mono mt-0.5">Includes 5% Restaurant GST</p>
+              <p className="text-[10px] text-stone-400 font-mono mt-0.5">Includes {totalGstPercent}% Restaurant GST</p>
             </div>
 
             <button
@@ -693,9 +742,15 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
                 <span className="text-stone-200">₹{subtotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Restaurant GST (5%):</span>
+                <span>Restaurant GST ({totalGstPercent}%):</span>
                 <span className="text-stone-200">₹{gst.toFixed(2)}</span>
               </div>
+              {taxConfig.serviceCharge > 0 && (
+                <div className="flex justify-between">
+                  <span>Service Charge ({taxConfig.serviceCharge}%):</span>
+                  <span className="text-stone-200">₹{serviceCharge.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-stone-800">
                 <span>Grand Total:</span>
                 <span className="text-emerald-400 text-base">₹{grandTotal.toFixed(2)}</span>

@@ -147,9 +147,14 @@ export const InventoryHub: React.FC = () => {
     const numDelta = parseFloat(adjDelta);
     if (isNaN(numDelta) || numDelta === 0) return;
 
+    if (adjType === "intake" && numDelta <= 0) {
+      showToast("Intake quantity must be a positive number (> 0).");
+      return;
+    }
+
     try {
       setSubmitting(true);
-      const effectiveDelta = adjType === "wastage" ? -Math.abs(numDelta) : numDelta;
+      const effectiveDelta = adjType === "wastage" ? -Math.abs(numDelta) : Math.abs(numDelta);
 
       await adjustIngredientStock(selectedIngredient.id, {
         quantity_delta: effectiveDelta,

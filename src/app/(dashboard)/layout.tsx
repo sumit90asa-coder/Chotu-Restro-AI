@@ -15,6 +15,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const { user, isLoading } = useAuth();
   const [voiceModalOpen, setVoiceModalOpen] = useState<boolean>(false);
+  const [mobileOpen, setMobileOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,12 +51,15 @@ export default function DashboardLayout({
   return (
     <div data-theme="dark-obsidian" className="flex h-screen w-screen overflow-hidden bg-[#110E0D] text-stone-100">
       {/* Sidebar Navigation */}
-      <Sidebar />
+      <Sidebar mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
 
       {/* Main Workspace Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         {/* Persistent Top Navigation Bar */}
-        <TopBar onOpenVoiceModal={() => setVoiceModalOpen(true)} />
+        <TopBar
+          onOpenVoiceModal={() => setVoiceModalOpen(true)}
+          onToggleMobileMenu={() => setMobileOpen((prev) => !prev)}
+        />
 
         {/* Page Content Viewport */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 scrollbar-thin scrollbar-thumb-stone-800">

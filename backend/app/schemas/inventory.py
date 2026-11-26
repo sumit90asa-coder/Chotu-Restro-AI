@@ -39,6 +39,13 @@ class StockAdjustment(BaseModel):
     transaction_type: str = "adjustment"
     notes: Optional[str] = None
 
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity_nonzero(cls, v: Decimal) -> Decimal:
+        if v == Decimal("0.000"):
+            raise ValueError("Adjustment quantity cannot be zero.")
+        return v
+
     @field_validator("transaction_type", mode="before")
     @classmethod
     def normalize_transaction_type(cls, v: Any) -> str:

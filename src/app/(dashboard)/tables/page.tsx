@@ -75,6 +75,7 @@ export default function TablesPage() {
 
   // Add Table Modal
   const [showAddTableModal, setShowAddTableModal] = useState<boolean>(false);
+  const [captainInput, setCaptainInput] = useState<string>("");
   const [newTableLabel, setNewTableLabel] = useState<string>("");
   const [newTableCapacity, setNewTableCapacity] = useState<number>(4);
   const [newTableFloor, setNewTableFloor] = useState<string>("Main AC Hall");
@@ -197,7 +198,7 @@ export default function TablesPage() {
     if (!selectedTable) return;
     setIsUpdatingStatus(true);
     try {
-      await updateTableStatus(selectedTable.id, newStatus);
+      await updateTableStatus(selectedTable.id, newStatus, captainInput.trim() || undefined);
       showToast(`Table ${selectedTable.label} updated to ${newStatus.toUpperCase()}`);
       setShowStatusModal(false);
       await loadTables();
@@ -671,6 +672,7 @@ export default function TablesPage() {
                       onClick={() => {
                         setShowStatusModal(true);
                         setNewStatus(selectedTable.status);
+                        setCaptainInput(selectedTable.captainName || "");
                       }}
                       className="py-2.5 px-3 rounded-xl bg-stone-900 border border-stone-800 hover:bg-stone-800 text-stone-300 text-xs font-semibold transition-colors"
                     >
@@ -805,6 +807,7 @@ export default function TablesPage() {
                       onClick={() => {
                         setShowStatusModal(true);
                         setNewStatus(selectedTable.status);
+                        setCaptainInput(selectedTable.captainName || "");
                       }}
                       className="py-2 px-3 rounded-xl bg-stone-900 border border-stone-700 hover:bg-stone-800 text-stone-200 text-xs font-semibold transition-colors"
                     >
@@ -982,6 +985,20 @@ export default function TablesPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-stone-300 mb-1.5">
+                Assign Server / Captain Name
+              </label>
+              <input
+                type="text"
+                value={captainInput}
+                onChange={(e) => setCaptainInput(e.target.value)}
+                placeholder="e.g. Ramesh K. or Suresh"
+                className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs placeholder:text-stone-500 focus:outline-none focus:border-[#E07A5F]"
+              />
+              <p className="text-[10px] text-stone-500 mt-1">Designates the floor captain responsible for this table session.</p>
             </div>
 
             <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-800">

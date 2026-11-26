@@ -129,10 +129,11 @@ export async function addMenuItemVariant(
   });
 }
 
-export async function updateMenuItem(dishId: string, updates: { inStock?: boolean; price?: number }): Promise<MenuItem> {
+export async function updateMenuItem(dishId: string, updates: { inStock?: boolean; price?: number; bestseller?: boolean }): Promise<MenuItem> {
   const body: any = {};
   if (updates.inStock !== undefined) body.is_in_stock = updates.inStock;
   if (updates.price !== undefined) body.price = updates.price;
+  if (updates.bestseller !== undefined) body.is_bestseller = updates.bestseller;
   const data = await apiFetch<BackendMenuItem>(`/menu/items/${dishId}`, {
     method: "PATCH",
     body: JSON.stringify(body),

@@ -38,10 +38,11 @@ interface PosTerminalProps {
   onAddDish: (dish: MenuItem, notes?: string) => void;
   onChangeQty: (dishId: string, delta: number) => void;
   onRemoveItem: (dishId: string) => void;
-  onTransmitKot: () => void;
+  onTransmitKot: (customerName?: string, customerPhone?: string, orderMode?: string) => Promise<void> | void;
   onSendWhatsApp: () => void;
   onSettleBill: () => void;
   dishes?: MenuItem[];
+  taxConfig?: { cgst: number; sgst: number; serviceCharge: number };
 }
 
 export const PosTerminal: React.FC<PosTerminalProps> = ({
@@ -56,6 +57,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   onSendWhatsApp,
   onSettleBill,
   dishes,
+  taxConfig,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -66,6 +68,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   // Customer Context State
   const [customerName, setCustomerName] = useState<string>("");
   const [customerPhone, setCustomerPhone] = useState<string>("");
+  const [orderMode, setOrderMode] = useState<"dine_in" | "takeaway" | "delivery">("dine_in");
 
   // Discount Percentage State
   const [discountPercent, setDiscountPercent] = useState<number>(0);
@@ -158,12 +161,17 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const rawSubtotal = ledgerItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const discountAmount = (rawSubtotal * discountPercent) / 100;
   const taxableSubtotal = Math.max(0, rawSubtotal - discountAmount);
-  const gst = taxableSubtotal * 0.05; // 2.5% CGST + 2.5% SGST
-  const serviceCharge = taxableSubtotal * 0.05;
+  const cgstRate = taxConfig?.cgst ?? 2.5;
+  const sgstRate = taxConfig?.sgst ?? 2.5;
+  const scRate = taxConfig?.serviceCharge ?? 5.0;
+  const cgstAmount = taxableSubtotal * (cgstRate / 100);
+  const sgstAmount = taxableSubtotal * (sgstRate / 100);
+  const gst = cgstAmount + sgstAmount;
+  const serviceCharge = taxableSubtotal * (scRate / 100);
   const grandTotal = taxableSubtotal + gst + serviceCharge;
 
-  // Live menu items from PostgreSQL or fallback
-  const availableDishes = dishes && dishes.length > 0 ? dishes : MENU_ITEMS;
+  // Live menu items from PostgreSQL (zero fake fallbacks for empty restaurants)
+  const availableDishes = dishes || [];
 
   // Filtered menu items
   const filteredDishes = availableDishes.filter((dish) => {
@@ -198,7 +206,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     if (ledgerItems.length === 0 || isSubmittingKot) return;
     setIsSubmittingKot(true);
     try {
-      await onTransmitKot();
+      await onTransmitKot(
+        customerName.trim() || undefined,
+        customerPhone.trim() || undefined,
+        orderMode
+      );
     } finally {
       setIsSubmittingKot(false);
     }
@@ -459,7 +471,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                         {/* Stock Status Badge */}
                         {!isInStock ? (
                           <div className="absolute top-2.5 right-2.5 text-[9px] font-mono uppercase px-2 py-0.5 rounded-full bg-rose-500/80 text-white font-bold">
-                            86'd Sold Out
+                            Sold Out
                           </div>
                         ) : dish.bestseller && (
                           <div className="absolute top-2.5 right-2.5 text-[9px] font-mono uppercase px-2 py-0.5 rounded-full bg-[#E07A5F] text-stone-950 font-bold">
@@ -533,6 +545,43 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <span className="px-2.5 py-1 rounded-full bg-stone-800 border border-stone-700 text-[10px] font-mono font-bold text-stone-300">
                 {ledgerItems.reduce((acc, it) => acc + it.quantity, 0)} Items
               </span>
+            </div>
+
+            {/* Order Mode Switcher */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-stone-900 border border-stone-800 text-[11px] font-mono">
+              <button
+                type="button"
+                onClick={() => setOrderMode("dine_in")}
+                className={`py-1 rounded-lg transition-colors font-medium cursor-pointer ${
+                  orderMode === "dine_in"
+                    ? "bg-[#E07A5F] text-stone-950 font-bold shadow-sm"
+                    : "text-stone-400 hover:text-white"
+                }`}
+              >
+                Dine-In
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderMode("takeaway")}
+                className={`py-1 rounded-lg transition-colors font-medium cursor-pointer ${
+                  orderMode === "takeaway"
+                    ? "bg-amber-500 text-stone-950 font-bold shadow-sm"
+                    : "text-stone-400 hover:text-white"
+                }`}
+              >
+                Takeout
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderMode("delivery")}
+                className={`py-1 rounded-lg transition-colors font-medium cursor-pointer ${
+                  orderMode === "delivery"
+                    ? "bg-sky-500 text-stone-950 font-bold shadow-sm"
+                    : "text-stone-400 hover:text-white"
+                }`}
+              >
+                Delivery
+              </button>
             </div>
 
             {/* Quick Customer Inputs */}
@@ -704,11 +753,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 </div>
               )}
               <div className="flex justify-between">
-                <span>CGST (2.5%) + SGST (2.5%):</span>
+                <span>CGST ({cgstRate}%) + SGST ({sgstRate}%):</span>
                 <span className="text-stone-200">₹{gst.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span>Service Charge (5%):</span>
+                <span>Service Charge ({scRate}%):</span>
                 <span className="text-stone-200">₹{serviceCharge.toFixed(2)}</span>
               </div>
             </div>

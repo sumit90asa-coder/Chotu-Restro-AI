@@ -122,10 +122,21 @@ export async function removeOrderItem(
   return { order, items };
 }
 
-export async function transmitTableKot(tableId: string, notes?: string): Promise<any> {
+export async function transmitTableKot(
+  tableId: string,
+  notes?: string,
+  customerName?: string,
+  customerPhone?: string,
+  orderMode?: string
+): Promise<any> {
   return await apiFetch(`/pos/tables/${tableId}/fire-kot`, {
     method: "POST",
-    body: JSON.stringify({ notes }),
+    body: JSON.stringify({
+      captain_notes: notes,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      mode: orderMode,
+    }),
   });
 }
 

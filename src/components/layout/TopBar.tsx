@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Mic, Sparkles, Activity, Clock, ShieldCheck, HelpCircle } from "lucide-react";
+import { Mic, Sparkles, Activity, Clock, ShieldCheck, HelpCircle, Menu } from "lucide-react";
 import { useAuth } from "@/lib/context/AuthContext";
 
 interface TopBarProps {
   onOpenVoiceModal: () => void;
+  onToggleMobileMenu?: () => void;
 }
 
-export function TopBar({ onOpenVoiceModal }: TopBarProps) {
+export function TopBar({ onOpenVoiceModal, onToggleMobileMenu }: TopBarProps) {
   const { user } = useAuth();
   const [clock, setClock] = useState<string>("");
 
@@ -26,7 +27,17 @@ export function TopBar({ onOpenVoiceModal }: TopBarProps) {
   return (
     <header className="h-16 border-b border-stone-800/80 bg-[#171413]/95 backdrop-blur-md px-6 flex items-center justify-between z-20">
       {/* Left: Outlet & Status */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        {onToggleMobileMenu && (
+          <button
+            type="button"
+            onClick={onToggleMobileMenu}
+            className="md:hidden p-2 -ml-2 rounded-xl bg-stone-900 border border-stone-800 text-stone-300 hover:text-white cursor-pointer"
+            title="Toggle Menu"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        )}
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-xs font-semibold text-stone-200">{user?.restaurantName || "Restaurant"}</span>

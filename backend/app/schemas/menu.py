@@ -112,3 +112,4 @@ class StockStatusUpdate(BaseModel):
 class MenuItemUpdate(BaseModel):
     is_in_stock: Optional[bool] = None
     price: Optional[Decimal] = None
+    is_bestseller: Optional[bool] = None

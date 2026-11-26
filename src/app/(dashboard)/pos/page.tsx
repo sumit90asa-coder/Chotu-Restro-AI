@@ -166,9 +166,9 @@ function PosContent() {
     }
   };
 
-  const handleTransmitKot = async () => {
+  const handleTransmitKot = async (customerName?: string, customerPhone?: string, orderMode?: string) => {
     try {
-      await transmitTableKot(selectedTableId);
+      await transmitTableKot(selectedTableId, undefined, customerName, customerPhone, orderMode);
       showToast(`KOT successfully sent to Kitchen for ${selectedTableId}!`);
     } catch {
       showToast(`KOT queued locally for ${selectedTableId}`);
@@ -232,6 +232,7 @@ function PosContent() {
         onTransmitKot={handleTransmitKot}
         onSendWhatsApp={() => showToast("Digital receipt link sent to customer WhatsApp!")}
         onSettleBill={() => setShowSettleModal(true)}
+        taxConfig={taxConfig}
       />
 
       {/* Bill Settlement Modal */}

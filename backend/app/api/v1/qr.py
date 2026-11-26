@@ -58,6 +58,9 @@ class QRMenuResponse(BaseModel):
     table_label: str
     table_status: str = "vacant"
     items: List[MenuItemResponse]
+    cgst_percent: float = 2.5
+    sgst_percent: float = 2.5
+    service_charge_percent: float = 0.0
 
 class QRTableInfoResponse(BaseModel):
     restaurant_name: str
@@ -91,12 +94,19 @@ def get_qr_menu(token: str, db: Session = Depends(get_db)):
         MenuItem.is_active == True
     ).all()
     
+    cgst = float(restaurant.cgst_percent) if restaurant and restaurant.cgst_percent is not None else 2.5
+    sgst = float(restaurant.sgst_percent) if restaurant and restaurant.sgst_percent is not None else 2.5
+    service_charge = float(restaurant.service_charge_percent) if restaurant and restaurant.service_charge_percent is not None else 0.0
+
     return QRMenuResponse(
         restaurant_name=restaurant.name if restaurant else "Restaurant",
         table_id=table.id,
         table_label=table.label,
         table_status=table.status.value,
-        items=items
+        items=items,
+        cgst_percent=cgst,
+        sgst_percent=sgst,
+        service_charge_percent=service_charge,
     )
 
 @router.get("/{token}/order", response_model=Optional[OrderResponse])

@@ -47,16 +47,20 @@ export const LiveOrdersHub: React.FC<LiveOrdersHubProps> = ({
 
   const filteredOrders = currentList.filter((order) => {
     if (modeFilter === "all") return true;
+    const rawMode = (order.mode || "").toLowerCase().replace("_", "-");
     if (modeFilter === "aggregators") {
       return (
-        order.mode === "zomato" ||
-        order.mode === "swiggy" ||
-        order.mode === "ubereats" ||
-        order.mode === "doordash" ||
+        rawMode === "zomato" ||
+        rawMode === "swiggy" ||
+        rawMode === "ubereats" ||
+        rawMode === "doordash" ||
         Boolean(order.aggregatorDetails)
       );
     }
-    return order.mode === modeFilter;
+    if (modeFilter === "dine-in") {
+      return rawMode === "dine-in" || rawMode === "dinein" || rawMode.includes("dine");
+    }
+    return rawMode === modeFilter;
   });
 
   const totalCompletedRevenue = completedOrders.reduce((acc, o) => acc + o.totalAmount, 0);

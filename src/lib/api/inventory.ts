@@ -149,3 +149,37 @@ export async function fetchLowStockIngredients(): Promise<IngredientStock[]> {
   }
 }
 
+export interface DishRecipeItem {
+  id: string;
+  menu_item_id: string;
+  ingredient_id: string;
+  ingredient_name: string;
+  unit: string;
+  quantity_required: number;
+}
+
+export async function fetchDishRecipes(menuItemId: string): Promise<DishRecipeItem[]> {
+  return await apiFetch<DishRecipeItem[]>(`/inventory/recipes/${menuItemId}`);
+}
+
+export async function linkRecipeIngredient(
+  menuItemId: string,
+  ingredientId: string,
+  quantityRequired: number
+): Promise<any> {
+  return await apiFetch("/inventory/recipes/link", {
+    method: "POST",
+    body: JSON.stringify({
+      menu_item_id: menuItemId,
+      ingredient_id: ingredientId,
+      quantity_required: quantityRequired,
+    }),
+  });
+}
+
+export async function unlinkRecipeIngredient(recipeItemId: string): Promise<any> {
+  return await apiFetch(`/inventory/recipes/${recipeItemId}`, {
+    method: "DELETE",
+  });
+}
+

@@ -80,6 +80,8 @@ def adjust_ingredient_stock(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if adj.transaction_type in ("purchase", "intake") and adj.quantity <= Decimal("0.000"):
+        raise HTTPException(status_code=400, detail="Stock intake quantity must be greater than zero.")
     try:
         ing = InventoryService.adjust_stock(
             db, current_user.restaurant_id, ingredient_id, adj.quantity, adj.transaction_type, adj.notes or ""
@@ -208,3 +210,43 @@ def link_recipe_ingredient(
         db.add(new_recipe)
     db.commit()
     return {"status": "success", "message": "Recipe ingredient linked"}
+
+@router.get("/recipes/{menu_item_id}")
+def get_dish_recipes(
+    menu_item_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    recipes = (
+        db.query(RecipeItem, Ingredient)
+        .join(Ingredient, RecipeItem.ingredient_id == Ingredient.id)
+        .filter(
+            RecipeItem.menu_item_id == menu_item_id,
+            Ingredient.restaurant_id == current_user.restaurant_id
+        )
+        .all()
+    )
+    return [
+        {
+            "id": r.RecipeItem.id,
+            "menu_item_id": r.RecipeItem.menu_item_id,
+            "ingredient_id": r.RecipeItem.ingredient_id,
+            "ingredient_name": r.Ingredient.name,
+            "unit": r.Ingredient.unit,
+            "quantity_required": float(r.RecipeItem.quantity_required),
+        }
+        for r in recipes
+    ]
+
+@router.delete("/recipes/{recipe_item_id}")
+def unlink_recipe_ingredient(
+    recipe_item_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    r_item = db.query(RecipeItem).filter(RecipeItem.id == recipe_item_id).first()
+    if not r_item:
+        raise HTTPException(status_code=404, detail="Recipe link not found")
+    db.delete(r_item)
+    db.commit()
+    return {"status": "success", "message": "Recipe item removed"}

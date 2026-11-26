@@ -24,6 +24,9 @@ class ModifyItemRequest(BaseModel):
 
 class FireKOTRequest(BaseModel):
     captain_notes: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    mode: Optional[str] = None
 
 @router.get("/tables/{table_id}/order", response_model=Optional[OrderResponse])
 def get_table_order(
@@ -121,6 +124,15 @@ async def fire_table_kot(
     current_user: User = Depends(get_current_user)
 ):
     order = OrderService.get_or_create_table_order(db, current_user.restaurant_id, table_id, placed_by=PlacedBy.POS)
+    if req.customer_name and req.customer_name.strip():
+        order.customer_name = req.customer_name.strip()
+    if req.customer_phone and req.customer_phone.strip():
+        order.customer_phone = req.customer_phone.strip()
+    if req.mode:
+        clean_mode = req.mode.lower().replace("-", "_")
+        if clean_mode in [m.value for m in OrderMode]:
+            order.mode = OrderMode(clean_mode)
+    db.commit()
     try:
         kot = OrderService.fire_kot(db, order.id, req.captain_notes)
     except ValueError as e:
