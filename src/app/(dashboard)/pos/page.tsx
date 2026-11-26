@@ -12,7 +12,8 @@ import {
   addOrUpdateOrderItem,
   removeOrderItem,
   transmitTableKot,
-  settleTableBill
+  settleTableBill,
+  cancelTableOrder
 } from "@/lib/api/pos";
 import { fetchRestaurantSettings } from "@/lib/api/settings";
 import { useAuth } from "@/lib/context/AuthContext";
@@ -27,6 +28,7 @@ function PosContent() {
   const [tables, setTables] = useState<Table[]>([]);
   const [dishes, setDishes] = useState<MenuItem[]>([]);
   const [selectedTableId, setSelectedTableId] = useState<string>(tableParam || "");
+  const [activeOrder, setActiveOrder] = useState<any>(null);
   const [ledgerItems, setLedgerItems] = useState<OrderItem[]>([]);
   const [taxConfig, setTaxConfig] = useState<{ cgst: number; sgst: number; serviceCharge: number }>({
     cgst: 2.5,
@@ -124,69 +126,78 @@ function PosContent() {
     async function syncTableOrder() {
       try {
         const orderData = await getTableOrder(selectedTableId);
+        setActiveOrder(orderData?.order || null);
         setLedgerItems(orderData?.items || []);
       } catch (err) {
         console.warn("Could not fetch remote table order:", err);
+        setActiveOrder(null);
+        setLedgerItems([]);
       }
     }
     syncTableOrder();
   }, [selectedTableId]);
 
   const handleAddDish = async (dish: MenuItem, notes?: string) => {
-    setLedgerItems((prev) => {
-      const existing = prev.find((i) => i.dishId === dish.id && i.notes === notes);
-      if (existing) {
-        return prev.map((i) =>
-          i.dishId === dish.id && i.notes === notes ? { ...i, quantity: i.quantity + 1 } : i
-        );
-      }
-      return [
-        ...prev,
-        {
-          dishId: dish.id,
-          name: dish.name,
-          price: dish.price,
-          quantity: 1,
-          dietary: dish.dietary,
-          station: dish.station,
-          notes: notes,
-        },
-      ];
-    });
-
     try {
-      await addOrUpdateOrderItem(selectedTableId, dish.id, 1, notes);
-    } catch {
-      // Local optimistic update kept
+      const res = await addOrUpdateOrderItem(selectedTableId, dish.id, 1, notes);
+      setActiveOrder(res.order);
+      setLedgerItems(res.items);
+      setTables((prev) =>
+        prev.map((t) =>
+          t.id === selectedTableId
+            ? { ...t, status: "occupied", currentBill: Number(res.order.total_amount || 0) }
+            : t
+        )
+      );
+    } catch (err: any) {
+      showToast(err.message || "Failed to add dish to order");
     }
   };
 
   const handleChangeQty = async (dishId: string, delta: number) => {
-    setLedgerItems((prev) =>
-      prev
-        .map((i) => {
-          if (i.dishId === dishId) {
-            const newQty = i.quantity + delta;
-            return newQty > 0 ? { ...i, quantity: newQty } : null;
-          }
-          return i;
-        })
-        .filter(Boolean) as OrderItem[]
-    );
-
     try {
-      await addOrUpdateOrderItem(selectedTableId, dishId, delta);
-    } catch {
-      // Optimistic update
+      const res = await addOrUpdateOrderItem(selectedTableId, dishId, delta);
+      setActiveOrder(res.order);
+      setLedgerItems(res.items);
+      setTables((prev) =>
+        prev.map((t) =>
+          t.id === selectedTableId
+            ? { ...t, currentBill: Number(res.order.total_amount || 0) }
+            : t
+        )
+      );
+    } catch (err: any) {
+      showToast(err.message || "Failed to update item quantity");
     }
   };
 
   const handleRemoveItem = async (dishId: string) => {
-    setLedgerItems((prev) => prev.filter((i) => i.dishId !== dishId));
     try {
-      await removeOrderItem(selectedTableId, dishId);
-    } catch {
-      // Optimistic update
+      const res = await removeOrderItem(selectedTableId, dishId);
+      setActiveOrder(res.order);
+      setLedgerItems(res.items);
+      setTables((prev) =>
+        prev.map((t) =>
+          t.id === selectedTableId
+            ? { ...t, currentBill: Number(res.order.total_amount || 0) }
+            : t
+        )
+      );
+    } catch (err: any) {
+      showToast(err.message || "Failed to remove item");
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    try {
+      await cancelTableOrder(selectedTableId, "Cancelled from POS Terminal");
+      showToast(`Active table session cleared and marked Vacant.`);
+      setActiveOrder(null);
+      setLedgerItems([]);
+      const refreshed = await fetchTables();
+      if (Array.isArray(refreshed)) setTables(refreshed);
+    } catch (err: any) {
+      showToast(err.message || "Failed to cancel table order");
     }
   };
 
@@ -197,8 +208,11 @@ function PosContent() {
       }
       await transmitTableKot(selectedTableId, undefined, customerName, customerPhone, orderMode);
       showToast(`KOT successfully sent to Kitchen for ${selectedTableId}!`);
-    } catch {
-      showToast(`KOT queued locally for ${selectedTableId}`);
+      // Refresh order to get any updated status
+      const updated = await getTableOrder(selectedTableId);
+      if (updated?.order) setActiveOrder(updated.order);
+    } catch (err: any) {
+      showToast(err.message || `Failed to fire KOT for ${selectedTableId}`);
     }
   };
 
@@ -209,6 +223,10 @@ function PosContent() {
   const grandTotal = Math.round(subtotal + cgst + sgst + serviceCharge);
 
   const handleSettleBillConfirm = async () => {
+    if (ledgerItems.length === 0 || grandTotal <= 0) {
+      showToast("Cannot settle empty bill with zero items.");
+      return;
+    }
     setIsSettling(true);
     const currentTable = tables.find((t) => t.id === selectedTableId);
     const snapshotItems = [...ledgerItems];
@@ -221,15 +239,11 @@ function PosContent() {
     try {
       await settleTableBill(selectedTableId, paymentMethod);
       showToast(`Bill for ${currentTable?.label || selectedTableId} settled via ${paymentMethod.toUpperCase()}!`);
-    } catch {
-      showToast(`Bill settlement recorded for ${currentTable?.label || selectedTableId}`);
-    } finally {
-      setIsSettling(false);
       setSettledInvoice({
-        invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
+        invoiceNumber: activeOrder?.order_number ? `INV-${activeOrder.order_number}` : `INV-${Date.now().toString().slice(-6)}`,
         tableId: selectedTableId,
         tableName: currentTable?.label || selectedTableId,
-        customerName: lastCustomerName || undefined,
+        customerName: lastCustomerName || activeOrder?.customer_name || undefined,
         items: snapshotItems,
         subtotal: snapshotSubtotal,
         cgst: snapshotCgst,
@@ -239,10 +253,15 @@ function PosContent() {
         paymentMethod,
         date: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
       });
+      setActiveOrder(null);
       setLedgerItems([]);
       setShowSettleModal(false);
       setShowPrintModal(true);
       fetchTables().then((t) => Array.isArray(t) && setTables(t)).catch(() => { });
+    } catch (err: any) {
+      showToast(err.message || "Failed to settle bill");
+    } finally {
+      setIsSettling(false);
     }
   };
 
@@ -261,6 +280,8 @@ function PosContent() {
         onSendWhatsApp={() => showToast("Digital receipt link sent to customer WhatsApp!")}
         onSettleBill={() => setShowSettleModal(true)}
         taxConfig={taxConfig}
+        activeOrder={activeOrder}
+        onCancelOrder={handleCancelOrder}
       />
 
       {/* Bill Settlement Modal */}

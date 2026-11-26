@@ -9,6 +9,7 @@ class PaymentMethod(str, enum.Enum):
     UPI = "upi"
     CARD = "card"
     ONLINE = "online"
+    COMPLIMENTARY = "complimentary"
 
 class PaymentRecordStatus(str, enum.Enum):
     SUCCESS = "success"

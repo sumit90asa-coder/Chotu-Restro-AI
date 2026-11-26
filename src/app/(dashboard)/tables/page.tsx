@@ -30,7 +30,7 @@ import {
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import { fetchTables, updateTableStatus, transferTable, createTable, deleteTable, fetchFloors } from "@/lib/api/tables";
-import { getTableOrder, settleTableBill } from "@/lib/api/pos";
+import { getTableOrder, settleTableBill, cancelTableOrder } from "@/lib/api/pos";
 import { Table, TableStatus, OrderItem } from "@/types/restaurant";
 import { wsClient } from "@/lib/api/websocket";
 
@@ -73,7 +73,8 @@ export default function TablesPage() {
 
   // Settle Bill Modal
   const [showSettleModal, setShowSettleModal] = useState<boolean>(false);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card">("upi");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "card" | "complimentary">("upi");
+  const [complimentaryReason, setComplimentaryReason] = useState<string>("");
   const [isSettling, setIsSettling] = useState<boolean>(false);
 
   // Add Table Modal
@@ -321,16 +322,46 @@ export default function TablesPage() {
   // Handle Bill Settlement directly from Floor
   const handleSettleBillSubmit = async () => {
     if (!selectedTable) return;
+    const totalDue = Number(selectedTable.currentBill || activeOrder?.total || 0);
+    const hasItems = activeOrder && activeOrder.items && activeOrder.items.length > 0;
+    
+    if ((!hasItems || totalDue <= 0) && paymentMethod !== "complimentary") {
+      showToast("Cannot settle zero-item bill via Cash, Card, or UPI.");
+      return;
+    }
+    if (paymentMethod === "complimentary" && !complimentaryReason.trim()) {
+      showToast("Please provide an authorized reason for complimentary settlement.");
+      return;
+    }
+
     setIsSettling(true);
     try {
-      await settleTableBill(selectedTable.id, paymentMethod, 0);
+      await settleTableBill(selectedTable.id, paymentMethod, 0, complimentaryReason.trim() || undefined);
       showToast(`Bill settled for ${selectedTable.label}. Table is now Vacant.`);
+      setShowSettleModal(false);
+      setComplimentaryReason("");
+      setSelectedTable(null);
+      await loadTables();
+    } catch (err: any) {
+      console.error("Failed to settle bill:", err);
+      showToast(err.message || "Error settling bill");
+    } finally {
+      setIsSettling(false);
+    }
+  };
+
+  // Safe cancellation of accidental or empty active order
+  const handleCancelEmptyOrder = async () => {
+    if (!selectedTable) return;
+    setIsSettling(true);
+    try {
+      await cancelTableOrder(selectedTable.id, "Empty active order cancelled from Floor & Tables");
+      showToast(`Active session cleared for Table ${selectedTable.label}. Table is now Vacant.`);
       setShowSettleModal(false);
       setSelectedTable(null);
       await loadTables();
-    } catch (err) {
-      console.error("Failed to settle bill:", err);
-      showToast("Error settling bill");
+    } catch (err: any) {
+      showToast(err.message || "Failed to clear table session");
     } finally {
       setIsSettling(false);
     }
@@ -939,13 +970,23 @@ export default function TablesPage() {
                       <span>Open in POS</span>
                     </Link>
 
-                    <button
-                      onClick={() => setShowSettleModal(true)}
-                      className="py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-stone-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all"
-                    >
-                      <CreditCard className="w-3.5 h-3.5" />
-                      <span>Settle Bill</span>
-                    </button>
+                    {activeOrder && activeOrder.items && activeOrder.items.length > 0 ? (
+                      <button
+                        onClick={() => setShowSettleModal(true)}
+                        className="py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-stone-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>Settle Bill</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleCancelEmptyOrder}
+                        className="py-2.5 px-3 rounded-xl bg-amber-500/20 border border-amber-500/30 hover:bg-amber-500/30 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Clear Table</span>
+                      </button>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -991,57 +1032,100 @@ export default function TablesPage() {
           description="Complete payment transaction and release table to vacant"
         >
           <div className="space-y-5">
+            {(!activeOrder || !activeOrder.items || activeOrder.items.length === 0 || (selectedTable.currentBill || activeOrder?.total || 0) <= 0) && (
+              <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-400 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold">No billable items in active order</p>
+                  <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                    Ordinary settlement (UPI, Card, Cash) cannot be processed for ₹0.00. Use Cancel Empty Order to safely release the table without recording a fake sale, or settle as complimentary with an authorized reason.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="p-4 rounded-2xl bg-stone-900 border border-stone-800 text-center">
               <span className="text-xs uppercase font-mono text-stone-400">Total Settlement Due</span>
               <div className="text-3xl font-bold font-mono text-emerald-400 mt-1">
-                ₹{(selectedTable.currentBill || activeOrder?.total || 0).toLocaleString("en-IN")}
+                ₹{(selectedTable.currentBill || activeOrder?.total || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-stone-300 mb-2">Select Payment Tender</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 {[
                   { id: "upi", label: "UPI / QR", icon: QrCode },
                   { id: "card", label: "Credit/Debit", icon: CreditCard },
                   { id: "cash", label: "Cash Tender", icon: Banknote },
+                  { id: "complimentary", label: "Complimentary", icon: ShieldCheck },
                 ].map((m) => {
                   const Icon = m.icon;
                   return (
                     <button
                       key={m.id}
                       type="button"
-                      onClick={() => setPaymentMethod(m.id as "cash" | "upi" | "card")}
-                      className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${
+                      onClick={() => setPaymentMethod(m.id as any)}
+                      className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${
                         paymentMethod === m.id
                           ? "bg-[#E07A5F]/20 border-[#E07A5F] text-[#F4A261] font-bold"
                           : "bg-stone-900 border-stone-800 text-stone-400 hover:text-white"
                       }`}
                     >
-                      <Icon className="w-5 h-5" />
-                      <span className="text-xs">{m.label}</span>
+                      <Icon className="w-4 h-4" />
+                      <span className="text-[11px]">{m.label}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-800">
+            {paymentMethod === "complimentary" && (
+              <div>
+                <label className="block text-xs font-medium text-stone-300 mb-1.5">Authorized Complimentary Reason *</label>
+                <input
+                  type="text"
+                  value={complimentaryReason}
+                  onChange={(e) => setComplimentaryReason(e.target.value)}
+                  placeholder="e.g. Owner guest, VIP tasting, manager discretion"
+                  className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-white text-xs focus:outline-none focus:border-[#E07A5F]"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2.5 pt-4 border-t border-stone-800">
+              {(!activeOrder || !activeOrder.items || activeOrder.items.length === 0 || (selectedTable.currentBill || activeOrder?.total || 0) <= 0) ? (
+                <button
+                  type="button"
+                  disabled={isSettling}
+                  onClick={handleCancelEmptyOrder}
+                  className="px-4 py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 hover:bg-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-all"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Cancel Empty Order & Free Table</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowSettleModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => setShowSettleModal(false)}
-                className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isSettling}
+                disabled={
+                  isSettling ||
+                  ((!activeOrder || !activeOrder.items || activeOrder.items.length === 0 || (selectedTable.currentBill || activeOrder?.total || 0) <= 0) &&
+                    (paymentMethod !== "complimentary" || !complimentaryReason.trim()))
+                }
                 onClick={handleSettleBillSubmit}
-                className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-stone-950 font-bold text-xs shadow-md transition-all flex items-center gap-2"
+                className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-stone-950 font-bold text-xs shadow-md transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>{isSettling ? "Processing..." : "Confirm Payment & Free Table"}</span>
+                <span>{isSettling ? "Processing..." : paymentMethod === "complimentary" ? "Confirm Complimentary Settlement" : "Confirm Payment & Free Table"}</span>
               </button>
             </div>
           </div>

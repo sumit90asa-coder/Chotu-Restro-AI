@@ -98,5 +98,10 @@ class OrderStatusUpdate(BaseModel):
     status: OrderStatus
 
 class BillSettlementRequest(BaseModel):
-    payment_method: str = "cash"  # cash, upi, card
+    payment_method: str = "cash"  # cash, upi, card, complimentary
+    discount_amount: Optional[Decimal] = Decimal("0.00")
     notes: Optional[str] = None
+    complimentary_reason: Optional[str] = None
+
+class CancelTableOrderRequest(BaseModel):
+    reason: Optional[str] = "Accidental order / table abandoned"

@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.order import Order, PlacedBy, OrderStatus, PaymentStatus, OrderMode
 from app.models.table import DiningTable, TableStatus
-from app.schemas.order import OrderResponse, BillSettlementRequest
+from app.schemas.menu import TableResponse
+from app.schemas.order import OrderResponse, BillSettlementRequest, CancelTableOrderRequest
 from app.schemas.kot import KOTResponse
 from app.services.order_service import OrderService
 from app.api.deps import get_current_user
@@ -36,7 +37,7 @@ def get_table_order(
 ):
     """
     CRITICAL: Pure read-only and idempotent. Returns current active order for this table,
-    or None if table is vacant with no active session.
+    or a clean draft payload if table is vacant with no active session.
     """
     table = db.query(DiningTable).filter(
         DiningTable.id == table_id,
@@ -75,14 +76,18 @@ def get_table_order(
         Order.restaurant_id == current_user.restaurant_id
     ).first()
     
-    if not order or order.status == OrderStatus.COMPLETED or order.payment_status == PaymentStatus.PAID:
-        # Reset stale reference if order is completed
+    if not order or order.status in (OrderStatus.COMPLETED, OrderStatus.CANCELLED) or order.payment_status == PaymentStatus.PAID:
+        # Reset stale reference if order is completed or cancelled
         table.current_order_id = None
         table.current_bill = Decimal("0.00")
         table.opened_at = None
         db.commit()
         return empty_draft_order(table)
-        
+
+    # Recalculate bill before returning to ensure completely authoritative totals
+    OrderService.recalculate_order_bill(db, order)
+    db.commit()
+    db.refresh(order)
     return order
 
 @router.post("/tables/{table_id}/order/items", response_model=OrderResponse)
@@ -92,8 +97,11 @@ async def modify_table_order_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    order = OrderService.get_or_create_table_order(db, current_user.restaurant_id, table_id, placed_by=PlacedBy.POS)
-    order = OrderService.add_or_update_order_item(db, order.id, req.dish_id, req.delta_qty, req.notes)
+    try:
+        order = OrderService.get_or_create_table_order(db, current_user.restaurant_id, table_id, placed_by=PlacedBy.POS)
+        order = OrderService.add_or_update_order_item(db, order.id, req.dish_id, req.delta_qty, req.notes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     await ws_manager.broadcast_to_restaurant(
         current_user.restaurant_id,
@@ -108,8 +116,12 @@ async def remove_table_order_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    order = OrderService.get_or_create_table_order(db, current_user.restaurant_id, table_id, placed_by=PlacedBy.POS)
-    order = OrderService.add_or_update_order_item(db, order.id, dish_id, delta_qty=-9999)
+    try:
+        order = OrderService.get_or_create_table_order(db, current_user.restaurant_id, table_id, placed_by=PlacedBy.POS)
+        order = OrderService.add_or_update_order_item(db, order.id, dish_id, delta_qty=-9999)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     await ws_manager.broadcast_to_restaurant(
         current_user.restaurant_id,
         create_ws_message(WSEventType.ORDER_UPDATED, {"order_id": order.id, "table_id": table_id, "total": float(order.total_amount)})
@@ -123,17 +135,17 @@ async def fire_table_kot(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    order = OrderService.get_or_create_table_order(db, current_user.restaurant_id, table_id, placed_by=PlacedBy.POS)
-    if req.customer_name and req.customer_name.strip():
-        order.customer_name = req.customer_name.strip()
-    if req.customer_phone and req.customer_phone.strip():
-        order.customer_phone = req.customer_phone.strip()
-    if req.mode:
-        clean_mode = req.mode.lower().replace("-", "_")
-        if clean_mode in [m.value for m in OrderMode]:
-            order.mode = OrderMode(clean_mode)
-    db.commit()
     try:
+        order = OrderService.get_or_create_table_order(db, current_user.restaurant_id, table_id, placed_by=PlacedBy.POS)
+        if req.customer_name and req.customer_name.strip():
+            order.customer_name = req.customer_name.strip()
+        if req.customer_phone and req.customer_phone.strip():
+            order.customer_phone = req.customer_phone.strip()
+        if req.mode:
+            clean_mode = req.mode.lower().replace("-", "_")
+            if clean_mode in [m.value for m in OrderMode]:
+                order.mode = OrderMode(clean_mode)
+        db.commit()
         kot = OrderService.fire_kot(db, order.id, req.captain_notes)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -148,6 +160,36 @@ async def fire_table_kot(
         })
     )
     return kot
+
+@router.post("/tables/{table_id}/cancel-order", response_model=TableResponse)
+async def cancel_table_order_endpoint(
+    table_id: str,
+    req: Optional[CancelTableOrderRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Safely cancels an accidental, abandoned, or empty active order and frees the table to VACANT.
+    Does NOT fabricate a sale, payment, or loyalty points.
+    """
+    reason = req.reason if req and req.reason else "Cancelled by staff"
+    try:
+        table = OrderService.cancel_table_order(
+            db, current_user.restaurant_id, table_id, reason=reason
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await ws_manager.broadcast_to_restaurant(
+        current_user.restaurant_id,
+        create_ws_message(WSEventType.TABLE_UPDATED, {
+            "table_id": table_id,
+            "status": "vacant",
+            "current_bill": 0.0,
+            "opened_at": None
+        })
+    )
+    return table
 
 @router.post("/tables/{table_id}/settle", response_model=OrderResponse)
 async def settle_table_bill(
@@ -166,22 +208,33 @@ async def settle_table_bill(
         raise HTTPException(status_code=404, detail="Table not found")
     if not table.current_order_id:
         raise HTTPException(status_code=409, detail="Table has no active order to settle or bill was already settled")
+        
     order = (
         db.query(Order)
-        .filter(Order.id == table.current_order_id)
+        .filter(Order.id == table.current_order_id, Order.restaurant_id == current_user.restaurant_id)
         .with_for_update()
         .execution_options(populate_existing=True)
         .first()
     )
-    if not order or not order.items:
-        raise HTTPException(status_code=400, detail="Cannot settle an empty order")
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
     try:
-        order = OrderService.settle_bill(db, order.id, req.payment_method)
+        order = OrderService.settle_bill(
+            db,
+            order.id,
+            payment_method=req.payment_method,
+            discount_amount=req.discount_amount or Decimal("0.00"),
+            complimentary_reason=req.complimentary_reason
+        )
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        msg = str(e)
+        if "already been settled" in msg or "already settled" in msg or "paid" in msg:
+            raise HTTPException(status_code=409, detail=msg)
+        raise HTTPException(status_code=400, detail=msg)
 
     await ws_manager.broadcast_to_restaurant(
         current_user.restaurant_id,
-        create_ws_message(WSEventType.TABLE_UPDATED, {"table_id": table_id, "status": "vacant"})
+        create_ws_message(WSEventType.TABLE_UPDATED, {"table_id": table_id, "status": "vacant", "current_bill": 0.0})
     )
     return order

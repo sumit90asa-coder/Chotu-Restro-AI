@@ -43,6 +43,8 @@ interface PosTerminalProps {
   onSettleBill: () => void;
   dishes?: MenuItem[];
   taxConfig?: { cgst: number; sgst: number; serviceCharge: number };
+  activeOrder?: any;
+  onCancelOrder?: () => Promise<void> | void;
 }
 
 export const PosTerminal: React.FC<PosTerminalProps> = ({
@@ -58,6 +60,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   onSettleBill,
   dishes,
   taxConfig,
+  activeOrder,
+  onCancelOrder,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -364,8 +368,22 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 <span className="px-2 py-0.5 rounded-md bg-[#E07A5F] text-stone-950 text-[10px] font-bold uppercase tracking-wider">
                   {selectedTable.label}
                 </span>
-                <span className="font-bold text-white">Active Order</span>
-                <span className="text-stone-400 text-[11px]">({selectedTable.capacity} Pax)</span>
+                {activeOrder && activeOrder.order_number && activeOrder.order_number !== "DRAFT" ? (
+                  <>
+                    <span className="font-bold text-emerald-400">Order #{activeOrder.order_number}</span>
+                    <span className="text-stone-400 text-[11px]">({selectedTable.capacity} Pax • {ledgerItems.reduce((acc, it) => acc + it.quantity, 0)} Items)</span>
+                  </>
+                ) : selectedTable.status === "occupied" ? (
+                  <>
+                    <span className="font-bold text-amber-400">Occupied (0 items)</span>
+                    <span className="text-stone-400 text-[11px]">({selectedTable.capacity} Pax)</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-bold text-stone-400">Vacant</span>
+                    <span className="text-stone-400 text-[11px]">({selectedTable.capacity} Pax)</span>
+                  </>
+                )}
                 <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
               </button>
 
@@ -799,6 +817,17 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <CreditCard className="w-4 h-4" />
               <span>Checkout & Settle Payment</span>
             </button>
+
+            {selectedTable.status === "occupied" && ledgerItems.length === 0 && onCancelOrder && (
+              <button
+                type="button"
+                onClick={onCancelOrder}
+                className="w-full py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+              >
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>Cancel Empty Order & Free Table</span>
+              </button>
+            )}
           </div>
 
         </div>

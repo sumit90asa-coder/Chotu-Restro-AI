@@ -22,24 +22,31 @@ class OrderService:
         placed_by: PlacedBy = PlacedBy.POS
     ) -> Order:
         """
-        Ensures each table has its own unique, independent active order.
+        Ensures each table has its own authoritative, independent active order.
+        Locks the dining table row to serialize concurrent requests.
         """
-        # Acquire exclusive row lock on PostgreSQL to safely serialize concurrent orders
-        table_q = db.query(DiningTable).filter(DiningTable.id == table_id, DiningTable.restaurant_id == restaurant_id)
+        table_q = db.query(DiningTable).filter(
+            DiningTable.id == table_id,
+            DiningTable.restaurant_id == restaurant_id
+        )
         if db.bind and db.bind.dialect.name == "postgresql":
             table = table_q.with_for_update().first()
         else:
             table = table_q.first()
+            
         if not table:
-            raise ValueError(f"Table {table_id} not found")
+            raise ValueError(f"Table {table_id} not found in this restaurant")
 
-        # Check if table already has an active order
+        # Check if table already has a valid active order
         if table.current_order_id:
-            order = db.query(Order).filter(Order.id == table.current_order_id).first()
+            order = db.query(Order).filter(
+                Order.id == table.current_order_id,
+                Order.restaurant_id == restaurant_id
+            ).first()
             if order and order.status != OrderStatus.COMPLETED and order.status != OrderStatus.CANCELLED:
                 return order
 
-        # Create new order for this table
+        # Create new authoritative order for this table
         now = datetime.now(timezone.utc)
         order_seq = db.query(Order).filter(Order.restaurant_id == restaurant_id).count() + 1
         order_num = f"{table.label}-{order_seq}"
@@ -51,7 +58,7 @@ class OrderService:
             table_id=table_id,
             order_number=order_num,
             token_number=token_num,
-            customer_name=customer_name,
+            customer_name=customer_name or f"Table {table.label} Guest",
             mode=OrderMode.DINE_IN,
             status=OrderStatus.PREPARING,
             payment_status=PaymentStatus.PENDING,
@@ -84,10 +91,22 @@ class OrderService:
         order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
             raise ValueError("Order not found")
-            
-        dish = db.query(MenuItem).filter(MenuItem.id == dish_id).first()
+
+        if order.status == OrderStatus.COMPLETED or order.payment_status == PaymentStatus.PAID:
+            raise ValueError("Cannot modify an already completed or paid order")
+
+        dish = db.query(MenuItem).filter(
+            MenuItem.id == dish_id,
+            MenuItem.restaurant_id == order.restaurant_id
+        ).first()
         if not dish:
-            raise ValueError("Dish not found")
+            raise ValueError("Dish not found or does not belong to this restaurant")
+
+        if not dish.is_in_stock or not dish.is_active:
+            raise ValueError(f"'{dish.name}' is currently unavailable (86'd out of stock)")
+
+        if dish.price is None or dish.price < Decimal("0.00"):
+            raise ValueError(f"Invalid unit price for '{dish.name}'")
 
         existing_item = db.query(OrderItem).filter(
             OrderItem.order_id == order_id,
@@ -100,7 +119,7 @@ class OrderService:
                 db.delete(existing_item)
             else:
                 existing_item.quantity = new_qty
-                if notes:
+                if notes is not None:
                     existing_item.notes = notes
         else:
             if delta_qty > 0:
@@ -156,13 +175,16 @@ class OrderService:
         order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
             raise ValueError("Order not found")
-            
+
+        if order.status == OrderStatus.COMPLETED or order.payment_status == PaymentStatus.PAID:
+            raise ValueError("Cannot fire KOT for a completed or paid order")
+
         if items_to_fire is not None:
             items = items_to_fire
         else:
             items = db.query(OrderItem).filter(OrderItem.order_id == order_id).all()
 
-        if not items:
+        if not items or len(items) == 0:
             raise ValueError("Cannot fire KOT with empty order")
 
         # Get next sequential KOT number atomically on PostgreSQL
@@ -209,7 +231,23 @@ class OrderService:
         return kot
 
     @staticmethod
-    def settle_bill(db: Session, order_id: str, payment_method: str = "cash") -> Order:
+    def settle_bill(
+        db: Session,
+        order_id: str,
+        payment_method: str = "cash",
+        discount_amount: Decimal = Decimal("0.00"),
+        complimentary_reason: Optional[str] = None
+    ) -> Order:
+        """
+        Settles an order bill with row-level concurrency locking.
+        Validates:
+        - Order must exist and be unpaid.
+        - Order must have at least one valid item.
+        - If bill is ₹0, ordinary cash/upi/card settlement is rejected;
+          only complimentary settlement with an authorized reason is allowed.
+        - Prevents duplicate payment and duplicate loyalty awards.
+        - Frees table cleanly.
+        """
         order = (
             db.query(Order)
             .filter(Order.id == order_id)
@@ -223,30 +261,84 @@ class OrderService:
         if order.payment_status == PaymentStatus.PAID or order.status == OrderStatus.COMPLETED:
             raise ValueError("Order has already been settled and paid")
 
+        if order.status == OrderStatus.CANCELLED:
+            raise ValueError("Cannot settle a cancelled order")
+
+        # Verify order has billable items
+        items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
+        if not items or len(items) == 0:
+            raise ValueError("Cannot settle an empty order with zero items. Use the cancel order workflow to release the table.")
+
+        # Recalculate bill if total_amount is unset (0.00) or if a discount was explicitly provided at checkout
+        if (order.total_amount <= Decimal("0.00") and items) or (discount_amount and discount_amount > Decimal("0.00")):
+            if discount_amount and discount_amount > Decimal("0.00"):
+                order.discount = discount_amount
+            OrderService.recalculate_order_bill(db, order)
+
+        is_complimentary = payment_method.lower() == "complimentary"
+
+        # Zero-value validation
+        if order.total_amount <= Decimal("0.00"):
+            if not is_complimentary:
+                raise ValueError("Ordinary payment (Cash/UPI/Card) cannot be processed for ₹0.00. Use complimentary settlement with an authorized reason.")
+            if not complimentary_reason or not complimentary_reason.strip():
+                raise ValueError("Complimentary settlement requires an authorized reason.")
+
+            payment = Payment(
+                id=f"pay-{uuid.uuid4().hex[:10]}",
+                order_id=order.id,
+                amount=Decimal("0.00"),
+                method=PaymentMethod.COMPLIMENTARY,
+                status=PaymentRecordStatus.SUCCESS,
+                transaction_ref=f"COMP-{uuid.uuid4().hex[:8].upper()}"
+            )
+            db.add(payment)
+        else:
+            if is_complimentary:
+                if not complimentary_reason or not complimentary_reason.strip():
+                    raise ValueError("Complimentary settlement requires an authorized reason.")
+                payment = Payment(
+                    id=f"pay-{uuid.uuid4().hex[:10]}",
+                    order_id=order.id,
+                    amount=order.total_amount,
+                    method=PaymentMethod.COMPLIMENTARY,
+                    status=PaymentRecordStatus.SUCCESS,
+                    transaction_ref=f"COMP-{uuid.uuid4().hex[:8].upper()}"
+                )
+                db.add(payment)
+            else:
+                pay_method_enum = PaymentMethod.CASH
+                if payment_method.lower() == "upi":
+                    pay_method_enum = PaymentMethod.UPI
+                elif payment_method.lower() == "card":
+                    pay_method_enum = PaymentMethod.CARD
+                elif payment_method.lower() == "online":
+                    pay_method_enum = PaymentMethod.ONLINE
+
+                payment = Payment(
+                    id=f"pay-{uuid.uuid4().hex[:10]}",
+                    order_id=order.id,
+                    amount=order.total_amount,
+                    method=pay_method_enum,
+                    status=PaymentRecordStatus.SUCCESS,
+                    transaction_ref=f"TXN-{uuid.uuid4().hex[:8].upper()}"
+                )
+                db.add(payment)
+
+                # Automatic CRM Loyalty Points Accumulation (Only for genuine paid orders)
+                from app.services.crm_service import CRMService
+                CRMService.award_points_for_order(db, order)
+
         order.payment_status = PaymentStatus.PAID
         order.status = OrderStatus.COMPLETED
-        order.status = OrderStatus.COMPLETED
-        
-        # Record payment
-        pay_method_enum = PaymentMethod.CASH
-        if payment_method.lower() == "upi":
-            pay_method_enum = PaymentMethod.UPI
-        elif payment_method.lower() == "card":
-            pay_method_enum = PaymentMethod.CARD
 
-        payment = Payment(
-            id=f"pay-{uuid.uuid4().hex[:10]}",
-            order_id=order.id,
-            amount=order.total_amount,
-            method=pay_method_enum,
-            status=PaymentRecordStatus.SUCCESS,
-            transaction_ref=f"TXN-{uuid.uuid4().hex[:8].upper()}"
-        )
-        db.add(payment)
-
-        # Free up the table
+        # Free up the table safely with row-level lock
         if order.table_id:
-            table = db.query(DiningTable).filter(DiningTable.id == order.table_id).first()
+            table_q = db.query(DiningTable).filter(DiningTable.id == order.table_id)
+            if db.bind and db.bind.dialect.name == "postgresql":
+                table = table_q.with_for_update().first()
+            else:
+                table = table_q.first()
             if table:
                 table.status = TableStatus.VACANT
                 table.current_order_id = None
@@ -255,13 +347,60 @@ class OrderService:
                 table.opened_at = None
                 table.assigned_waiter_id = None
 
-        # Automatic CRM Loyalty Points Accumulation (Phase 4)
-        from app.services.crm_service import CRMService
-        CRMService.award_points_for_order(db, order)
-
         db.commit()
         db.refresh(order)
         return order
+
+    @staticmethod
+    def cancel_table_order(
+        db: Session,
+        restaurant_id: str,
+        table_id: str,
+        reason: Optional[str] = None
+    ) -> DiningTable:
+        """
+        Safely cancels an active or accidental order and frees the table to VACANT.
+        Prevents recording fake payments or sales.
+        """
+        table_q = db.query(DiningTable).filter(
+            DiningTable.id == table_id,
+            DiningTable.restaurant_id == restaurant_id
+        )
+        if db.bind and db.bind.dialect.name == "postgresql":
+            table = table_q.with_for_update().first()
+        else:
+            table = table_q.first()
+            
+        if not table:
+            raise ValueError(f"Table {table_id} not found")
+
+        if table.current_order_id:
+            order = (
+                db.query(Order)
+                .filter(Order.id == table.current_order_id)
+                .with_for_update()
+                .first()
+            )
+            if order:
+                if order.payment_status == PaymentStatus.PAID:
+                    raise ValueError("Cannot cancel an order that has already been paid and settled")
+                order.status = OrderStatus.CANCELLED
+                
+                # Bump or cancel any KOTs for this order
+                kots = db.query(KOT).filter(KOT.order_id == order.id).all()
+                for k in kots:
+                    k.status = KOTStatus.BUMPED
+
+        table.status = TableStatus.VACANT
+        table.current_order_id = None
+        table.current_bill = Decimal("0.00")
+        table.opened_at = None
+        table.captain_name = None
+        table.assigned_waiter_id = None
+
+        db.commit()
+        db.refresh(table)
+        return table
 
     @staticmethod
     def transfer_table(db: Session, restaurant_id: str, from_table_id: str, to_table_id: str) -> DiningTable:

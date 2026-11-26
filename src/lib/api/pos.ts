@@ -142,14 +142,28 @@ export async function transmitTableKot(
 
 export async function settleTableBill(
   tableId: string,
-  paymentMethod: "cash" | "card" | "upi" = "upi",
-  discountAmount: number = 0
+  paymentMethod: "cash" | "card" | "upi" | "complimentary" = "upi",
+  discountAmount: number = 0,
+  complimentaryReason?: string
 ): Promise<any> {
   return await apiFetch(`/pos/tables/${tableId}/settle`, {
     method: "POST",
     body: JSON.stringify({
       payment_method: paymentMethod,
       discount_amount: discountAmount,
+      complimentary_reason: complimentaryReason,
+    }),
+  });
+}
+
+export async function cancelTableOrder(
+  tableId: string,
+  reason: string = "Accidental order / table abandoned"
+): Promise<any> {
+  return await apiFetch(`/pos/tables/${tableId}/cancel-order`, {
+    method: "POST",
+    body: JSON.stringify({
+      reason,
     }),
   });
 }
