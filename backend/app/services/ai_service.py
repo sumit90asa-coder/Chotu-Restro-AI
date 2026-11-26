@@ -148,15 +148,20 @@ Answer the staff question concisely, professionally, in a helpful hospitality to
 Never invent financial or inventory metrics not in this context.
 """
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}",
-                        json={
-                            "contents": [{"parts": [{"text": f"{system_prompt}\nUser Question: {message}"}]}]
-                        }
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    for model_name in ["gemini-3.5-flash", "gemini-flash-lite-latest"]:
+                        try:
+                            resp = await client.post(
+                                f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={settings.GEMINI_API_KEY}",
+                                json={
+                                    "contents": [{"parts": [{"text": f"{system_prompt}\nUser Question: {message}"}]}]
+                                }
+                            )
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                                break
+                        except Exception:
+                            continue
             except Exception:
                 reply = ""  # fallback to deterministic handler
 

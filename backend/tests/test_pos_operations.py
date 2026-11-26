@@ -215,12 +215,12 @@ def test_03_financial_math_gst_and_settlement(client: TestClient, db_session):
     assert payment.amount == expected_total
     assert payment.transaction_ref.startswith("TXN-")
 
-    # Reject duplicate settlement on now-vacant table
+    # Reject duplicate settlement on now-vacant table (HTTP 409 Conflict)
     res_dup_settle = client.post(
         "/api/v1/pos/tables/T-07/settle",
         json={"payment_method": "cash"}
     )
-    assert res_dup_settle.status_code == 400
+    assert res_dup_settle.status_code == 409
 
 
 def test_04_kot_generation_kds_tracking_and_bumping(client: TestClient, db_session):

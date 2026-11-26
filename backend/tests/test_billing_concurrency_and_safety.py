@@ -132,14 +132,14 @@ def test_settle_bill_lifecycle_and_duplicate_prevention(client, db_session, bill
     assert payments[0].amount == Decimal("105.00")
 
     # 2. Duplicate settlement request on the same table (Cashier 2 / Browser retry)
-    # The table has now been vacated
+    # The table has now been vacated / order was settled
     resp2 = client.post(
         f"/api/v1/pos/tables/{table.id}/settle",
         json={"payment_method": "cash"},
         headers=headers
     )
-    assert resp2.status_code == 400
-    assert "no active order" in resp2.json()["detail"].lower()
+    assert resp2.status_code == 409
+    assert "already settled" in resp2.json()["detail"].lower() or "no active order" in resp2.json()["detail"].lower()
 
     # 3. Direct duplicate settlement attempt on the same order_id via OrderService
     with pytest.raises(ValueError, match="already been settled"):
@@ -148,3 +148,41 @@ def test_settle_bill_lifecycle_and_duplicate_prevention(client, db_session, bill
     # Verify payment ledger still has strictly 1 payment
     payments_after = db_session.query(Payment).filter(Payment.order_id == order.id).all()
     assert len(payments_after) == 1
+
+def test_concurrent_settlement_thread_race(client, db_session, billing_fixture):
+    """
+    Spawns two simultaneous worker threads executing /tables/{table_id}/settle
+    against the same un-settled order to verify database row-level locking
+    and race condition prevention.
+    """
+    import concurrent.futures
+    user = billing_fixture["user"]
+    table = billing_fixture["table"]
+    order = billing_fixture["order"]
+
+    token = create_access_token(
+        subject=user.id,
+        extra_claims={"role": user.role.value, "restaurant_id": user.restaurant_id}
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    results = []
+    def settle_worker():
+        return client.post(
+            f"/api/v1/pos/tables/{table.id}/settle",
+            json={"payment_method": "cash"},
+            headers=headers
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(settle_worker)
+        f2 = executor.submit(settle_worker)
+        results = [f1.result(), f2.result()]
+
+    status_codes = sorted([r.status_code for r in results])
+    # Exactly one request must succeed (200), and the competing request must be rejected (409)
+    assert status_codes == [200, 409], f"Unexpected race condition status codes: {status_codes}"
+
+    # Verify database state: exactly 1 payment record exists
+    payments = db_session.query(Payment).filter(Payment.order_id == order.id).all()
+    assert len(payments) == 1, f"CRITICAL: Duplicate payments created! Count = {len(payments)}"

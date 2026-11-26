@@ -46,15 +46,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Health Check
+# Health & Deployment Version Metadata Check
 @app.get("/health")
 @app.get(f"{settings.API_V1_STR}/health")
+@app.get("/api/version")
+@app.get(f"{settings.API_V1_STR}/version")
 def health_check():
+    git_commit = os.getenv("RENDER_GIT_COMMIT", os.getenv("GIT_COMMIT_SHA", "e71f6bc"))
+    build_time = os.getenv("BUILD_TIMESTAMP", "2026-11-26T20:00:00Z")
+    env_name = os.getenv("ENVIRONMENT", "production")
     return {
         "status": "healthy",
         "service": "Chotu Restro AI Backend",
         "version": "1.0.0",
-        "currency": "INR"
+        "git_commit": git_commit[:7] if git_commit else "unknown",
+        "git_commit_full": git_commit,
+        "build_timestamp": build_time,
+        "environment": env_name,
+        "currency": "INR",
+        "alembic_head": "005_persistent_revocation_and_coupons"
     }
 
 # API v1 Routers

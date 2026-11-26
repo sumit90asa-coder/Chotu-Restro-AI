@@ -160,7 +160,7 @@ async def settle_table_bill(
     if not table:
         raise HTTPException(status_code=404, detail="Table not found")
     if not table.current_order_id:
-        raise HTTPException(status_code=400, detail="Table has no active order to settle")
+        raise HTTPException(status_code=409, detail="Table has no active order to settle or bill was already settled")
     order = db.query(Order).filter(Order.id == table.current_order_id).first()
     if not order or not order.items:
         raise HTTPException(status_code=400, detail="Cannot settle an empty order")
