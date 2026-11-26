@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import { Expense } from "@/types/restaurant";
+import { useAuth } from "@/lib/context/AuthContext";
 import { 
   Wallet, 
   Plus, 
@@ -17,59 +18,9 @@ import {
   DollarSign
 } from "lucide-react";
 
-const INITIAL_EXPENSES: Expense[] = [
-  {
-    id: "exp-01",
-    title: "Fresh Vegetables Market Purchase",
-    category: "supplies",
-    amount: 2450,
-    paymentMode: "cash",
-    paidTo: "Bandra Wholesale Subzi Mandi",
-    recordedBy: "Deepak Nair (Cashier)",
-    date: "23-Nov-2026",
-    receiptNumber: "REC-4901",
-    notes: "Tomatoes, Onions, Coriander, Ginger-Garlic paste",
-  },
-  {
-    id: "exp-02",
-    title: "Amul Fresh Dairy Delivery",
-    category: "supplies",
-    amount: 1800,
-    paymentMode: "upi",
-    paidTo: "Amul Authorized Distributor",
-    recordedBy: "Rahul Sharma (Manager)",
-    date: "23-Nov-2026",
-    receiptNumber: "AML-9912",
-    notes: "15 Litres Fresh Full Cream Milk, 5kg Fresh Paneer",
-  },
-  {
-    id: "exp-03",
-    title: "Kitchen Tandoor Exhaust Servicing",
-    category: "maintenance",
-    amount: 1200,
-    paymentMode: "cash",
-    paidTo: "QuickFix Chimney Services",
-    recordedBy: "Rahul Sharma (Manager)",
-    date: "22-Nov-2026",
-    receiptNumber: "QF-102",
-    notes: "Filter deep cleaning and grease trap replacement",
-  },
-  {
-    id: "exp-04",
-    title: "Commercial LPG Cylinder Refill (19kg)",
-    category: "utilities",
-    amount: 1950,
-    paymentMode: "bank_transfer",
-    paidTo: "Bharat Gas Commercial Agency",
-    recordedBy: "Rahul Sharma (Manager)",
-    date: "21-Nov-2026",
-    receiptNumber: "BG-8842",
-    notes: "2 Commercial red cylinders for kitchen range",
-  },
-];
-
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<Expense[]>(INITIAL_EXPENSES);
+  const { user } = useAuth();
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [newExp, setNewExp] = useState({
@@ -82,6 +33,21 @@ export default function ExpensesPage() {
     notes: "",
   });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const storageKey = user?.restaurantId ? `chotu_expenses_${user.restaurantId}` : "chotu_expenses_default";
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        setExpenses(JSON.parse(stored));
+      } else {
+        setExpenses([]);
+      }
+    } catch {
+      setExpenses([]);
+    }
+  }, [storageKey]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -98,12 +64,16 @@ export default function ExpensesPage() {
       amount: Number(newExp.amount),
       paymentMode: newExp.paymentMode,
       paidTo: newExp.paidTo || "Vendor",
-      recordedBy: "Staff Member",
-      date: "Today",
+      recordedBy: user?.fullName || "Staff Member",
+      date: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
       receiptNumber: newExp.receiptNumber || `EXP-${Math.floor(1000 + Math.random() * 9000)}`,
       notes: newExp.notes,
     };
-    setExpenses([added, ...expenses]);
+    const updated = [added, ...expenses];
+    setExpenses(updated);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+    } catch {}
     showToast(`Logged expense of ₹${added.amount} for "${added.title}"`);
     setShowAddModal(false);
     setNewExp({
@@ -214,34 +184,48 @@ export default function ExpensesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/80">
-              {filteredExpenses.map((exp) => (
-                <tr key={exp.id} className="hover:bg-stone-900/40 transition-colors">
-                  <td className="px-5 py-4">
-                    <p className="font-bold text-white text-xs">{exp.title}</p>
-                    {exp.notes && (
-                      <p className="text-[11px] text-stone-400 mt-0.5 line-clamp-1">{exp.notes}</p>
-                    )}
-                  </td>
-                  <td className="px-4 py-4 capitalize text-stone-300 font-medium">
-                    {exp.category}
-                  </td>
-                  <td className="px-4 py-4 text-stone-300">{exp.paidTo}</td>
-                  <td className="px-4 py-4">
-                    <span className="px-2 py-0.5 rounded uppercase font-mono text-[10px] font-bold bg-stone-900 border border-stone-800 text-stone-300">
-                      {exp.paymentMode}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 font-mono text-stone-400 text-[11px]">
-                    {exp.receiptNumber}
-                  </td>
-                  <td className="px-4 py-4 font-bold text-rose-400 text-xs">
-                    ₹{exp.amount.toLocaleString("en-IN")}
-                  </td>
-                  <td className="px-4 py-4 text-right font-mono text-stone-400 text-[11px]">
-                    {exp.date}
+              {filteredExpenses.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-12 text-center text-stone-500 font-mono text-xs">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Receipt className="w-8 h-8 text-stone-600 mb-1" />
+                      <p className="font-semibold text-stone-300">No expenses recorded yet</p>
+                      <p className="text-[11px] text-stone-500 max-w-sm">
+                        Track petty cash, vendor purchases, LPG refills, and cash drawer disbursements by clicking &quot;Record Expense&quot;.
+                      </p>
+                    </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredExpenses.map((exp) => (
+                  <tr key={exp.id} className="hover:bg-stone-900/40 transition-colors">
+                    <td className="px-5 py-4">
+                      <p className="font-bold text-white text-xs">{exp.title}</p>
+                      {exp.notes && (
+                        <p className="text-[11px] text-stone-400 mt-0.5 line-clamp-1">{exp.notes}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 capitalize text-stone-300 font-medium">
+                      {exp.category}
+                    </td>
+                    <td className="px-4 py-4 text-stone-300">{exp.paidTo}</td>
+                    <td className="px-4 py-4">
+                      <span className="px-2 py-0.5 rounded uppercase font-mono text-[10px] font-bold bg-stone-900 border border-stone-800 text-stone-300">
+                        {exp.paymentMode}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 font-mono text-stone-400 text-[11px]">
+                      {exp.receiptNumber}
+                    </td>
+                    <td className="px-4 py-4 font-bold text-rose-400 text-xs">
+                      ₹{exp.amount.toLocaleString("en-IN")}
+                    </td>
+                    <td className="px-4 py-4 text-right font-mono text-stone-400 text-[11px]">
+                      {exp.date}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

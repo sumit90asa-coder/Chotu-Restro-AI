@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { LiveOrdersHub } from "@/components/orders/LiveOrdersHub";
 import { fetchLiveOrders, updateOrderStatus } from "@/lib/api/orders";
 import { LiveOrder, AggregatorChannel } from "@/types/restaurant";
-import { INITIAL_LIVE_ORDERS, INITIAL_AGGREGATORS } from "@/data/mockData";
+import { INITIAL_AGGREGATORS } from "@/data/mockData";
 import { wsClient } from "@/lib/api/websocket";
 
 export default function OrdersPage() {

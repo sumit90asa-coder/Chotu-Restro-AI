@@ -25,48 +25,8 @@ import {
   Trash2
 } from "lucide-react";
 
-const INITIAL_COUPONS: Coupon[] = [
-  {
-    id: "cpn-01",
-    code: "WELCOME20",
-    description: "20% off on first direct QR menu order",
-    discountType: "percentage",
-    discountValue: 20,
-    minOrderValue: 400,
-    maxDiscount: 150,
-    usageLimit: 500,
-    usedCount: 142,
-    expiresAt: "31-Dec-2026",
-    isActive: true,
-  },
-  {
-    id: "cpn-02",
-    code: "CHOTU100",
-    description: "Flat ₹100 off on dining bills above ₹800",
-    discountType: "flat",
-    discountValue: 100,
-    minOrderValue: 800,
-    usageLimit: 300,
-    usedCount: 89,
-    expiresAt: "15-Dec-2026",
-    isActive: true,
-  },
-  {
-    id: "cpn-03",
-    code: "WEEKEND50",
-    description: "Flat ₹50 off on weekend dessert & beverage orders",
-    discountType: "flat",
-    discountValue: 50,
-    minOrderValue: 300,
-    usageLimit: 200,
-    usedCount: 64,
-    expiresAt: "30-Nov-2026",
-    isActive: true,
-  },
-];
-
 export default function MarketingPage() {
-  const [coupons, setCoupons] = useState<Coupon[]>(INITIAL_COUPONS);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [newCoupon, setNewCoupon] = useState({
     code: "",
@@ -82,7 +42,7 @@ export default function MarketingPage() {
     const loadCoupons = async () => {
       try {
         const data = await fetchCoupons();
-        if (data && data.length > 0) {
+        if (Array.isArray(data)) {
           const mapped: Coupon[] = data.map((d: any) => ({
             id: d.id,
             code: d.code,
@@ -97,20 +57,12 @@ export default function MarketingPage() {
             isActive: Boolean(d.is_active ?? d.isActive ?? true),
           }));
           setCoupons(mapped);
-          try {
-            localStorage.setItem("chotu_coupons", JSON.stringify(mapped));
-          } catch {}
           return;
         }
       } catch (err) {
-        console.warn("Falling back to cached coupons:", err);
+        console.warn("Error fetching coupons:", err);
       }
-      try {
-        const saved = localStorage.getItem("chotu_coupons");
-        if (saved) {
-          setCoupons(JSON.parse(saved));
-        }
-      } catch {}
+      setCoupons([]);
     };
 
     loadCoupons();
@@ -289,91 +241,108 @@ export default function MarketingPage() {
       </div>
 
       {/* Active Coupons Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {coupons.map((coupon) => (
-          <div
-            key={coupon.id}
-            className={`p-5 rounded-2xl bg-[#181514] border transition-all shadow-lg relative overflow-hidden flex flex-col justify-between ${
-              coupon.isActive
-                ? "border-stone-800 hover:border-stone-700"
-                : "border-stone-800/40 opacity-60 bg-stone-950/60"
-            }`}
+      {coupons.length === 0 ? (
+        <div className="p-12 text-center rounded-2xl bg-[#181514] border border-stone-800 space-y-3">
+          <Tag className="w-10 h-10 mx-auto text-stone-600" />
+          <h3 className="text-sm font-bold text-stone-200">No Promo Codes Created</h3>
+          <p className="text-xs text-stone-400 max-w-sm mx-auto">
+            Boost customer retention and QR self-ordering by creating discount vouchers and seasonal promo codes.
+          </p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#E07A5F] hover:bg-[#d0694e] text-stone-950 font-bold text-xs shadow-md transition-all mt-2 cursor-pointer"
           >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span
-                  className={`px-3 py-1 rounded-xl font-mono font-bold text-sm tracking-wider ${
-                    coupon.isActive
-                      ? "bg-[#E07A5F]/20 border border-[#E07A5F]/40 text-[#F4A261]"
-                      : "bg-stone-800 border border-stone-700 text-stone-500 line-through"
-                  }`}
-                >
-                  {coupon.code}
-                </span>
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase font-mono border ${
-                    coupon.isActive
-                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                      : "bg-stone-800 text-stone-400 border-stone-700"
-                  }`}
-                >
-                  {coupon.isActive ? "Active" : "Disabled"}
-                </span>
-              </div>
-
-              <p className="text-xs font-semibold text-white mb-2">{coupon.description}</p>
-
-              <div className="space-y-1.5 text-[11px] text-stone-400 mb-4">
-                <div className="flex justify-between">
-                  <span>Discount:</span>
-                  <span className={coupon.isActive ? "text-emerald-400 font-bold" : "text-stone-500"}>
-                    {coupon.discountType === "percentage" ? `${coupon.discountValue}% OFF` : `₹${coupon.discountValue} FLAT`}
+            <Plus className="w-4 h-4" />
+            <span>Create First Promo Code</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {coupons.map((coupon) => (
+            <div
+              key={coupon.id}
+              className={`p-5 rounded-2xl bg-[#181514] border transition-all shadow-lg relative overflow-hidden flex flex-col justify-between ${
+                coupon.isActive
+                  ? "border-stone-800 hover:border-stone-700"
+                  : "border-stone-800/40 opacity-60 bg-stone-950/60"
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <span
+                    className={`px-3 py-1 rounded-xl font-mono font-bold text-sm tracking-wider ${
+                      coupon.isActive
+                        ? "bg-[#E07A5F]/20 border border-[#E07A5F]/40 text-[#F4A261]"
+                        : "bg-stone-800 border border-stone-700 text-stone-500 line-through"
+                    }`}
+                  >
+                    {coupon.code}
+                  </span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase font-mono border ${
+                      coupon.isActive
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                        : "bg-stone-800 text-stone-400 border-stone-700"
+                    }`}
+                  >
+                    {coupon.isActive ? "Active" : "Disabled"}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Min Order:</span>
-                  <span className="text-stone-300 font-mono">₹{coupon.minOrderValue}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Redeemed:</span>
-                  <span className="text-stone-300 font-mono">{coupon.usedCount} times</span>
-                </div>
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-stone-800">
-              <span className="text-[10px] text-stone-500 font-mono">Expires: {coupon.expiresAt}</span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => handleToggleStatus(coupon.id)}
-                  className={`p-1.5 rounded-lg border transition-colors ${
-                    coupon.isActive
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-                      : "bg-stone-800 border-stone-700 text-stone-400 hover:bg-stone-700"
-                  }`}
-                  title={coupon.isActive ? "Disable Promo Code" : "Enable Promo Code"}
-                >
-                  <Power className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => copyCode(coupon.code)}
-                  className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-stone-800 text-stone-300 transition-colors"
-                  title="Copy Code"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => handleDeleteCoupon(coupon.id)}
-                  className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-rose-500/20 hover:text-rose-400 text-stone-400 transition-colors"
-                  title="Delete Promo Code"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                <p className="text-xs font-semibold text-white mb-2">{coupon.description}</p>
+
+                <div className="space-y-1.5 text-[11px] text-stone-400 mb-4">
+                  <div className="flex justify-between">
+                    <span>Discount:</span>
+                    <span className={coupon.isActive ? "text-emerald-400 font-bold" : "text-stone-500"}>
+                      {coupon.discountType === "percentage" ? `${coupon.discountValue}% OFF` : `₹${coupon.discountValue} FLAT`}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Min Order:</span>
+                    <span className="text-stone-300 font-mono">₹{coupon.minOrderValue}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Redeemed:</span>
+                    <span className="text-stone-300 font-mono">{coupon.usedCount} times</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-stone-800">
+                <span className="text-[10px] text-stone-500 font-mono">Expires: {coupon.expiresAt}</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleToggleStatus(coupon.id)}
+                    className={`p-1.5 rounded-lg border transition-colors ${
+                      coupon.isActive
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                        : "bg-stone-800 border-stone-700 text-stone-400 hover:bg-stone-700"
+                    }`}
+                    title={coupon.isActive ? "Disable Promo Code" : "Enable Promo Code"}
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => copyCode(coupon.code)}
+                    className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-stone-800 text-stone-300 transition-colors"
+                    title="Copy Code"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCoupon(coupon.id)}
+                    className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:bg-rose-500/20 hover:text-rose-400 text-stone-400 transition-colors"
+                    title="Delete Promo Code"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Add Coupon Modal */}
       <Modal

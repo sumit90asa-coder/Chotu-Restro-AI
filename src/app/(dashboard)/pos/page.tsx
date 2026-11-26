@@ -4,10 +4,6 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { PosTerminal } from "@/components/pos/PosTerminal";
 import { Modal } from "@/components/ui/Modal";
-import {
-  INITIAL_TABLES,
-  MENU_ITEMS
-} from "@/data/mockData";
 import { Table, MenuItem, OrderItem } from "@/types/restaurant";
 import { fetchTables } from "@/lib/api/tables";
 import { fetchMenuItems } from "@/lib/api/menu";

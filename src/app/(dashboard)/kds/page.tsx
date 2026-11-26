@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import { KitchenDisplay } from "@/components/kds/KitchenDisplay";
 import { fetchKDSTickets, bumpKOT, recallKOT, toggleKOTItem } from "@/lib/api/kds";
 import { KOT } from "@/types/restaurant";
-import { INITIAL_KOTS } from "@/data/mockData";
 import { wsClient } from "@/lib/api/websocket";
 
 export default function KdsPage() {
