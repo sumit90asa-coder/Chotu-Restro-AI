@@ -4,19 +4,19 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { PosTerminal } from "@/components/pos/PosTerminal";
 import { Modal } from "@/components/ui/Modal";
-import { 
-  INITIAL_TABLES, 
-  MENU_ITEMS 
+import {
+  INITIAL_TABLES,
+  MENU_ITEMS
 } from "@/data/mockData";
 import { Table, MenuItem, OrderItem } from "@/types/restaurant";
 import { fetchTables } from "@/lib/api/tables";
 import { fetchMenuItems } from "@/lib/api/menu";
-import { 
-  getTableOrder, 
-  addOrUpdateOrderItem, 
-  removeOrderItem, 
-  transmitTableKot, 
-  settleTableBill 
+import {
+  getTableOrder,
+  addOrUpdateOrderItem,
+  removeOrderItem,
+  transmitTableKot,
+  settleTableBill
 } from "@/lib/api/pos";
 import { fetchRestaurantSettings } from "@/lib/api/settings";
 import { useAuth } from "@/lib/context/AuthContext";
@@ -83,9 +83,9 @@ function PosContent() {
         if (Array.isArray(menuData)) setDishes(menuData);
         if (settingsData) {
           setTaxConfig({
-            cgst: Number(settingsData.cgst_rate ?? 2.5),
-            sgst: Number(settingsData.sgst_rate ?? 2.5),
-            serviceCharge: Number(settingsData.service_charge_rate ?? 5.0),
+            cgst: Number(settingsData.cgst_percent ?? 2.5),
+            sgst: Number(settingsData.sgst_percent ?? 2.5),
+            serviceCharge: Number(settingsData.service_charge_percent ?? 5.0),
           });
         }
       } catch (err) {
@@ -214,7 +214,7 @@ function PosContent() {
       setLedgerItems([]);
       setShowSettleModal(false);
       setShowPrintModal(true);
-      fetchTables().then((t) => Array.isArray(t) && setTables(t)).catch(() => {});
+      fetchTables().then((t) => Array.isArray(t) && setTables(t)).catch(() => { });
     }
   };
 
@@ -256,11 +256,10 @@ function PosContent() {
               <button
                 type="button"
                 onClick={() => setPaymentMethod("upi")}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${
-                  paymentMethod === "upi"
-                    ? "bg-[#E07A5F]/20 border-[#E07A5F] text-[#F4A261]"
-                    : "bg-stone-900 border-stone-800 text-stone-400 hover:text-white"
-                }`}
+                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${paymentMethod === "upi"
+                  ? "bg-[#E07A5F]/20 border-[#E07A5F] text-[#F4A261]"
+                  : "bg-stone-900 border-stone-800 text-stone-400 hover:text-white"
+                  }`}
               >
                 <QrCode className="w-5 h-5" />
                 <span className="text-xs font-bold">UPI / QR</span>
@@ -269,11 +268,10 @@ function PosContent() {
               <button
                 type="button"
                 onClick={() => setPaymentMethod("cash")}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${
-                  paymentMethod === "cash"
-                    ? "bg-[#E07A5F]/20 border-[#E07A5F] text-[#F4A261]"
-                    : "bg-stone-900 border-stone-800 text-stone-400 hover:text-white"
-                }`}
+                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${paymentMethod === "cash"
+                  ? "bg-[#E07A5F]/20 border-[#E07A5F] text-[#F4A261]"
+                  : "bg-stone-900 border-stone-800 text-stone-400 hover:text-white"
+                  }`}
               >
                 <Banknote className="w-5 h-5" />
                 <span className="text-xs font-bold">Cash</span>
@@ -282,11 +280,10 @@ function PosContent() {
               <button
                 type="button"
                 onClick={() => setPaymentMethod("card")}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${
-                  paymentMethod === "card"
-                    ? "bg-[#E07A5F]/20 border-[#E07A5F] text-[#F4A261]"
-                    : "bg-stone-900 border-stone-800 text-stone-400 hover:text-white"
-                }`}
+                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${paymentMethod === "card"
+                  ? "bg-[#E07A5F]/20 border-[#E07A5F] text-[#F4A261]"
+                  : "bg-stone-900 border-stone-800 text-stone-400 hover:text-white"
+                  }`}
               >
                 <CreditCard className="w-5 h-5" />
                 <span className="text-xs font-bold">Card (EDC)</span>
@@ -335,7 +332,7 @@ function PosContent() {
         <div className="space-y-4">
           {/* Printable Receipt Preview Card */}
           {settledInvoice ? (
-            <div id="printable-invoice" className="printable-area p-6 rounded-xl bg-stone-950 border border-stone-800 font-mono text-xs text-stone-300 space-y-3 print:border-none print:p-0">
+            <div id="printable-invoice" className="p-6 rounded-xl bg-stone-950 border border-stone-800 font-mono text-xs text-stone-300 space-y-3 print:border-none print:p-0">
               <div className="text-center space-y-0.5 border-b border-stone-800 pb-3">
                 <h2 className="text-base font-bold text-white uppercase">{user?.restaurantName || "CHOTU RESTRO AI"}</h2>
                 <p className="text-[10px] text-stone-400">Official Computerized Tax Invoice • Dine-In POS</p>

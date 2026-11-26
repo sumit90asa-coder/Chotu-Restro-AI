@@ -22,6 +22,25 @@ export interface StockAdjustmentPayload {
   reason?: string;
 }
 
+export interface IngredientCreatePayload {
+  name: string;
+  unit?: string;
+  current_stock?: number;
+  reorder_threshold?: number;
+  cost_per_unit?: number;
+  supplier_name?: string;
+}
+
+export interface StockTransactionData {
+  id: string;
+  ingredient_id: string;
+  transaction_type: string;
+  quantity: number;
+  reference_id?: string;
+  notes?: string;
+  created_at: string;
+}
+
 export async function fetchIngredients(): Promise<IngredientStock[]> {
   const data = await apiFetch<any[]>("/inventory/ingredients");
   return data.map((item) => ({
@@ -35,6 +54,70 @@ export async function fetchIngredients(): Promise<IngredientStock[]> {
     is_low_stock: Boolean(item.is_low_stock),
     supplier_name: item.supplier_name,
     status: item.is_low_stock ? "Low Stock" : Number(item.current_stock) <= 0 ? "Out of Stock" : "In Stock",
+  }));
+}
+
+export async function createIngredient(
+  payload: IngredientCreatePayload
+): Promise<IngredientStock> {
+  const item = await apiFetch<any>("/inventory/ingredients", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return {
+    id: item.id,
+    name: item.name,
+    unit: item.unit,
+    current_stock: Number(item.current_stock),
+    reorder_threshold: Number(item.reorder_threshold),
+    min_reorder_level: Number(item.reorder_threshold ?? 5),
+    cost_per_unit: Number(item.cost_per_unit),
+    is_low_stock: Boolean(item.is_low_stock),
+    supplier_name: item.supplier_name,
+    status: item.is_low_stock ? "Low Stock" : Number(item.current_stock) <= 0 ? "Out of Stock" : "In Stock",
+  };
+}
+
+export async function updateIngredient(
+  ingredientId: string,
+  payload: Partial<IngredientCreatePayload>
+): Promise<IngredientStock> {
+  const item = await apiFetch<any>(`/inventory/ingredients/${ingredientId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  return {
+    id: item.id,
+    name: item.name,
+    unit: item.unit,
+    current_stock: Number(item.current_stock),
+    reorder_threshold: Number(item.reorder_threshold),
+    min_reorder_level: Number(item.reorder_threshold ?? 5),
+    cost_per_unit: Number(item.cost_per_unit),
+    is_low_stock: Boolean(item.is_low_stock),
+    supplier_name: item.supplier_name,
+    status: item.is_low_stock ? "Low Stock" : Number(item.current_stock) <= 0 ? "Out of Stock" : "In Stock",
+  };
+}
+
+export async function deleteIngredient(ingredientId: string): Promise<boolean> {
+  await apiFetch<any>(`/inventory/ingredients/${ingredientId}`, {
+    method: "DELETE",
+  });
+  return true;
+}
+
+export async function fetchStockTransactions(ingredientId?: string): Promise<StockTransactionData[]> {
+  const query = ingredientId ? `?ingredient_id=${encodeURIComponent(ingredientId)}` : "";
+  const data = await apiFetch<any[]>(`/inventory/transactions${query}`);
+  return data.map((t) => ({
+    id: t.id,
+    ingredient_id: t.ingredient_id,
+    transaction_type: t.transaction_type,
+    quantity: Number(t.quantity),
+    reference_id: t.reference_id,
+    notes: t.notes,
+    created_at: t.created_at,
   }));
 }
 

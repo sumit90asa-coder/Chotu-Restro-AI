@@ -18,11 +18,17 @@ class InventoryService:
                 continue
             recipe_items = db.query(RecipeItem).filter(RecipeItem.menu_item_id == m_id).all()
             for r_item in recipe_items:
-                ingredient = db.query(Ingredient).filter(Ingredient.id == r_item.ingredient_id).first()
+                ingredient = db.query(Ingredient).filter(
+                    Ingredient.id == r_item.ingredient_id,
+                    Ingredient.restaurant_id == restaurant_id
+                ).with_for_update().first()
                 if ingredient:
                     total_needed = Decimal(str(r_item.quantity_required)) * Decimal(str(item.quantity))
                     new_stock = Decimal(str(ingredient.current_stock)) - total_needed
+                    deficit_note = ""
                     if new_stock < Decimal("0.000"):
+                        shortage = abs(new_stock)
+                        deficit_note = f" [DEFICIT WARNING: consumed {total_needed} with only {ingredient.current_stock} in stock (shortage: {shortage})]"
                         new_stock = Decimal("0.000")
                     ingredient.current_stock = new_stock
                     
@@ -34,7 +40,7 @@ class InventoryService:
                         transaction_type=TransactionType.CONSUMPTION,
                         quantity=-total_needed,
                         reference_id=order_id,
-                        notes=f"Consumed by order {order_id} ({item.name} x{item.quantity})"
+                        notes=f"Consumed by order {order_id} ({item.name} x{item.quantity}){deficit_note}"
                     )
                     db.add(txn)
                     
@@ -48,10 +54,17 @@ class InventoryService:
 
     @staticmethod
     def adjust_stock(db: Session, restaurant_id: str, ingredient_id: str, delta: Decimal, txn_type: Any, notes: str = ""):
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id, Ingredient.restaurant_id == restaurant_id).first()
+        ingredient = db.query(Ingredient).filter(
+            Ingredient.id == ingredient_id, 
+            Ingredient.restaurant_id == restaurant_id
+        ).with_for_update().first()
         if not ingredient:
             raise ValueError("Ingredient not found")
             
+        # Proper accounting validation: prevent manual deduction greater than available stock
+        if delta < Decimal("0.000") and abs(delta) > ingredient.current_stock:
+            raise ValueError(f"Cannot deduct {abs(delta)} {ingredient.unit}. Current available stock is only {ingredient.current_stock} {ingredient.unit}.")
+
         new_stock = Decimal(str(ingredient.current_stock)) + delta
         if new_stock < Decimal("0.000"):
             new_stock = Decimal("0.000")

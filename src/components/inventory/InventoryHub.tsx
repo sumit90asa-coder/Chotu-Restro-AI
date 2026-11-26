@@ -19,13 +19,19 @@ import {
   Building,
   Check,
   Trash2,
-  Edit2
+  Edit2,
+  History
 } from "lucide-react";
 import { 
   IngredientStock, 
   fetchIngredients, 
   adjustIngredientStock, 
-  fetchStockAlerts 
+  fetchStockAlerts,
+  createIngredient,
+  updateIngredient,
+  deleteIngredient,
+  fetchStockTransactions,
+  StockTransactionData
 } from "@/lib/api/inventory";
 import {
   SupplierData,
@@ -58,6 +64,25 @@ export const InventoryHub: React.FC = () => {
   const [adjReason, setAdjReason] = useState<string>("Fresh vendor delivery");
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  // Add Ingredient Modal state
+  const [showAddIngredientModal, setShowAddIngredientModal] = useState<boolean>(false);
+  const [newIngredient, setNewIngredient] = useState({
+    name: "",
+    unit: "kg",
+    current_stock: 10,
+    reorder_threshold: 5,
+    cost_per_unit: 50,
+    supplier_name: "",
+  });
+
+  // Edit Ingredient Modal state
+  const [editingIngredient, setEditingIngredient] = useState<IngredientStock | null>(null);
+
+  // History Modal state
+  const [historyIngredient, setHistoryIngredient] = useState<IngredientStock | null>(null);
+  const [ingredientTransactions, setIngredientTransactions] = useState<StockTransactionData[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
 
   // Supplier modal
   const [showAddSupplierModal, setShowAddSupplierModal] = useState<boolean>(false);
@@ -209,6 +234,84 @@ export const InventoryHub: React.FC = () => {
       showToast(err.message || "Failed to receive purchase order");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCreateIngredient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newIngredient.name.trim()) return;
+    try {
+      setSubmitting(true);
+      const created = await createIngredient({
+        name: newIngredient.name.trim(),
+        unit: newIngredient.unit,
+        current_stock: Number(newIngredient.current_stock) || 0,
+        reorder_threshold: Number(newIngredient.reorder_threshold) || 5,
+        cost_per_unit: Number(newIngredient.cost_per_unit) || 0,
+        supplier_name: newIngredient.supplier_name.trim() || undefined,
+      });
+      showToast(`Added raw ingredient: ${created.name}`);
+      setShowAddIngredientModal(false);
+      setNewIngredient({
+        name: "",
+        unit: "kg",
+        current_stock: 10,
+        reorder_threshold: 5,
+        cost_per_unit: 50,
+        supplier_name: "",
+      });
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || "Failed to create ingredient");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateIngredient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingIngredient) return;
+    try {
+      setSubmitting(true);
+      const updated = await updateIngredient(editingIngredient.id, {
+        name: editingIngredient.name,
+        unit: editingIngredient.unit,
+        current_stock: Number(editingIngredient.current_stock),
+        reorder_threshold: Number(editingIngredient.reorder_threshold),
+        cost_per_unit: Number(editingIngredient.cost_per_unit),
+        supplier_name: editingIngredient.supplier_name || undefined,
+      });
+      showToast(`Updated ingredient: ${updated.name}`);
+      setEditingIngredient(null);
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || "Failed to update ingredient");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteIngredient = async (ing: IngredientStock) => {
+    if (!confirm(`Are you sure you want to delete raw ingredient "${ing.name}"?`)) return;
+    try {
+      await deleteIngredient(ing.id);
+      showToast(`Deleted ingredient: ${ing.name}`);
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || "Failed to delete ingredient");
+    }
+  };
+
+  const handleViewHistory = async (ing: IngredientStock) => {
+    setHistoryIngredient(ing);
+    setLoadingHistory(true);
+    try {
+      const txs = await fetchStockTransactions(ing.id);
+      setIngredientTransactions(txs);
+    } catch (err: any) {
+      showToast(err.message || "Failed to load stock history");
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
@@ -367,37 +470,47 @@ export const InventoryHub: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs font-mono">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => setFilterMode("all")}
-                className={`px-3 py-1.5 rounded transition-all cursor-pointer ${
-                  filterMode === "all"
-                    ? "bg-ink text-canvas font-bold"
-                    : "text-ink-secondary hover:text-ink bg-canvas-card border border-border"
-                }`}
+                onClick={() => setShowAddIngredientModal(true)}
+                className="px-3 py-1.5 bg-brand text-white font-mono text-xs font-bold rounded shadow-xs hover:bg-brand/90 transition-all cursor-pointer flex items-center gap-1.5"
               >
-                All Items ({ingredients.length})
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Raw Ingredient</span>
               </button>
-              <button
-                onClick={() => setFilterMode("low")}
-                className={`px-3 py-1.5 rounded transition-all cursor-pointer ${
-                  filterMode === "low"
-                    ? "bg-accent text-white font-bold"
-                    : "text-accent bg-accent/10 border border-accent/20 hover:bg-accent/20"
-                }`}
-              >
-                Low Stock ({lowStockCount})
-              </button>
-              <button
-                onClick={() => setFilterMode("out")}
-                className={`px-3 py-1.5 rounded transition-all cursor-pointer ${
-                  filterMode === "out"
-                    ? "bg-dietary-nonveg text-white font-bold"
-                    : "text-dietary-nonveg bg-dietary-nonveg/10 border border-dietary-nonveg/20 hover:bg-dietary-nonveg/20"
-                }`}
-              >
-                Out of Stock ({outOfStockCount})
-              </button>
+
+              <div className="flex items-center gap-1.5 text-xs font-mono">
+                <button
+                  onClick={() => setFilterMode("all")}
+                  className={`px-3 py-1.5 rounded transition-all cursor-pointer ${
+                    filterMode === "all"
+                      ? "bg-ink text-canvas font-bold"
+                      : "text-ink-secondary hover:text-ink bg-canvas-card border border-border"
+                  }`}
+                >
+                  All ({ingredients.length})
+                </button>
+                <button
+                  onClick={() => setFilterMode("low")}
+                  className={`px-3 py-1.5 rounded transition-all cursor-pointer ${
+                    filterMode === "low"
+                      ? "bg-accent text-white font-bold"
+                      : "text-accent bg-accent/10 border border-accent/20 hover:bg-accent/20"
+                  }`}
+                >
+                  Low ({lowStockCount})
+                </button>
+                <button
+                  onClick={() => setFilterMode("out")}
+                  className={`px-3 py-1.5 rounded transition-all cursor-pointer ${
+                    filterMode === "out"
+                      ? "bg-dietary-nonveg text-white font-bold"
+                      : "text-dietary-nonveg bg-dietary-nonveg/10 border border-dietary-nonveg/20 hover:bg-dietary-nonveg/20"
+                  }`}
+                >
+                  Out ({outOfStockCount})
+                </button>
+              </div>
             </div>
           </div>
 
@@ -456,17 +569,41 @@ export const InventoryHub: React.FC = () => {
                             </span>
                           </td>
                           <td className="py-3.5 px-4 text-right">
-                            <button
-                              onClick={() => {
-                                setSelectedIngredient(ing);
-                                setAdjDelta("5.0");
-                                setAdjType("intake");
-                                setAdjReason("Fresh shipment receipt");
-                              }}
-                              className="px-2.5 py-1 border border-border hover:border-brand text-ink text-[11px] font-mono font-medium rounded hover:bg-canvas transition-all cursor-pointer"
-                            >
-                              Adjust Stock
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setSelectedIngredient(ing);
+                                  setAdjDelta("5.0");
+                                  setAdjType("intake");
+                                  setAdjReason("Fresh shipment receipt");
+                                }}
+                                className="px-2 py-1 border border-border hover:border-brand text-ink text-[11px] font-mono font-medium rounded hover:bg-canvas transition-all cursor-pointer"
+                                title="Adjust stock"
+                              >
+                                Adjust
+                              </button>
+                              <button
+                                onClick={() => setEditingIngredient(ing)}
+                                className="p-1 border border-border hover:border-brand text-ink rounded hover:bg-canvas transition-all cursor-pointer"
+                                title="Edit ingredient"
+                              >
+                                <Edit2 className="w-3.5 h-3.5 text-ink-secondary" />
+                              </button>
+                              <button
+                                onClick={() => handleViewHistory(ing)}
+                                className="p-1 border border-border hover:border-brand text-ink rounded hover:bg-canvas transition-all cursor-pointer"
+                                title="Stock movement history"
+                              >
+                                <History className="w-3.5 h-3.5 text-ink-secondary" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteIngredient(ing)}
+                                className="p-1 border border-border hover:border-dietary-nonveg text-dietary-nonveg rounded hover:bg-dietary-nonveg/10 transition-all cursor-pointer"
+                                title="Delete ingredient"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1051,6 +1188,312 @@ export const InventoryHub: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Add Raw Ingredient Modal */}
+      {showAddIngredientModal && (
+        <div className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <form onSubmit={handleCreateIngredient} className="bg-canvas-card border border-border w-full max-w-md rounded shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <h3 className="font-bold text-sm text-ink flex items-center gap-2">
+                <Package className="w-4 h-4 text-brand" />
+                <span>Add New Raw Material / Ingredient</span>
+              </h3>
+              <button type="button" onClick={() => setShowAddIngredientModal(false)} className="text-ink-secondary hover:text-ink cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-ink mb-1">Ingredient Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Basmati Biryani Rice"
+                  value={newIngredient.name}
+                  onChange={(e) => setNewIngredient({ ...newIngredient, name: e.target.value })}
+                  className="w-full bg-canvas border border-border px-3 py-2 text-xs text-ink rounded focus:outline-none focus:border-brand"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1">Unit of Measurement *</label>
+                  <select
+                    value={newIngredient.unit}
+                    onChange={(e) => setNewIngredient({ ...newIngredient, unit: e.target.value })}
+                    className="w-full bg-canvas border border-border px-3 py-2 text-xs text-ink rounded focus:outline-none focus:border-brand"
+                  >
+                    <option value="kg">kg (Kilograms)</option>
+                    <option value="g">g (Grams)</option>
+                    <option value="l">l (Litres)</option>
+                    <option value="ml">ml (Millilitres)</option>
+                    <option value="pcs">pcs (Pieces / Units)</option>
+                    <option value="packet">packet (Packets)</option>
+                    <option value="can">can (Cans)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1">Opening Stock ({newIngredient.unit})</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    required
+                    value={newIngredient.current_stock}
+                    onChange={(e) => setNewIngredient({ ...newIngredient, current_stock: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-canvas border border-border px-3 py-2 text-xs font-mono text-ink rounded"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1">Min Safety Threshold</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    required
+                    value={newIngredient.reorder_threshold}
+                    onChange={(e) => setNewIngredient({ ...newIngredient, reorder_threshold: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-canvas border border-border px-3 py-2 text-xs font-mono text-ink rounded"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1">Purchase Price / Unit (₹)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    required
+                    value={newIngredient.cost_per_unit}
+                    onChange={(e) => setNewIngredient({ ...newIngredient, cost_per_unit: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-canvas border border-border px-3 py-2 text-xs font-mono text-ink rounded"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink mb-1">Associate Supplier (Optional)</label>
+                <select
+                  value={newIngredient.supplier_name}
+                  onChange={(e) => setNewIngredient({ ...newIngredient, supplier_name: e.target.value })}
+                  className="w-full bg-canvas border border-border px-3 py-2 text-xs text-ink rounded focus:outline-none focus:border-brand"
+                >
+                  <option value="">-- No Supplier Associated --</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.name}>{s.name} ({s.contact_person || "Contact"})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setShowAddIngredientModal(false)}
+                className="px-3.5 py-1.5 text-xs text-ink-secondary hover:text-ink cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-1.5 bg-brand text-white font-bold text-xs rounded cursor-pointer hover:bg-brand/90 disabled:opacity-50"
+              >
+                {submitting ? "Saving..." : "Save Raw Material"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Edit Ingredient Modal */}
+      {editingIngredient && (
+        <div className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <form onSubmit={handleUpdateIngredient} className="bg-canvas-card border border-border w-full max-w-md rounded shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <h3 className="font-bold text-sm text-ink flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-brand" />
+                <span>Edit Raw Material: {editingIngredient.name}</span>
+              </h3>
+              <button type="button" onClick={() => setEditingIngredient(null)} className="text-ink-secondary hover:text-ink cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-ink mb-1">Ingredient Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingIngredient.name}
+                  onChange={(e) => setEditingIngredient({ ...editingIngredient, name: e.target.value })}
+                  className="w-full bg-canvas border border-border px-3 py-2 text-xs text-ink rounded focus:outline-none focus:border-brand"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1">Measurement Unit</label>
+                  <select
+                    value={editingIngredient.unit}
+                    onChange={(e) => setEditingIngredient({ ...editingIngredient, unit: e.target.value })}
+                    className="w-full bg-canvas border border-border px-3 py-2 text-xs text-ink rounded focus:outline-none focus:border-brand"
+                  >
+                    <option value="kg">kg (Kilograms)</option>
+                    <option value="g">g (Grams)</option>
+                    <option value="l">l (Litres)</option>
+                    <option value="ml">ml (Millilitres)</option>
+                    <option value="pcs">pcs (Pieces / Units)</option>
+                    <option value="packet">packet (Packets)</option>
+                    <option value="can">can (Cans)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1">Current Stock ({editingIngredient.unit})</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    required
+                    value={editingIngredient.current_stock}
+                    onChange={(e) => setEditingIngredient({ ...editingIngredient, current_stock: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-canvas border border-border px-3 py-2 text-xs font-mono text-ink rounded"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1">Min Threshold ({editingIngredient.unit})</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    required
+                    value={editingIngredient.reorder_threshold}
+                    onChange={(e) => setEditingIngredient({ ...editingIngredient, reorder_threshold: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-canvas border border-border px-3 py-2 text-xs font-mono text-ink rounded"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1">Cost Per Unit (₹)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    required
+                    value={editingIngredient.cost_per_unit}
+                    onChange={(e) => setEditingIngredient({ ...editingIngredient, cost_per_unit: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-canvas border border-border px-3 py-2 text-xs font-mono text-ink rounded"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink mb-1">Associated Supplier</label>
+                <select
+                  value={editingIngredient.supplier_name || ""}
+                  onChange={(e) => setEditingIngredient({ ...editingIngredient, supplier_name: e.target.value })}
+                  className="w-full bg-canvas border border-border px-3 py-2 text-xs text-ink rounded focus:outline-none focus:border-brand"
+                >
+                  <option value="">-- No Supplier Associated --</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setEditingIngredient(null)}
+                className="px-3.5 py-1.5 text-xs text-ink-secondary hover:text-ink cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-1.5 bg-brand text-white font-bold text-xs rounded cursor-pointer hover:bg-brand/90 disabled:opacity-50"
+              >
+                {submitting ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Stock Movement History Modal */}
+      {historyIngredient && (
+        <div className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-canvas-card border border-border w-full max-w-2xl rounded shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <h3 className="font-bold text-sm text-ink flex items-center gap-2">
+                <History className="w-4 h-4 text-brand" />
+                <span>Stock Movement Ledger: {historyIngredient.name}</span>
+              </h3>
+              <button type="button" onClick={() => setHistoryIngredient(null)} className="text-ink-secondary hover:text-ink cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto">
+              {loadingHistory ? (
+                <div className="py-8 text-center text-xs text-ink-secondary font-mono">Loading transactions...</div>
+              ) : ingredientTransactions.length === 0 ? (
+                <div className="py-8 text-center text-xs text-ink-secondary font-mono">No stock movements recorded yet for this ingredient.</div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-border bg-canvas-subtle text-ink-secondary font-mono uppercase text-[10px]">
+                      <th className="py-2 px-3">Date</th>
+                      <th className="py-2 px-3">Type</th>
+                      <th className="py-2 px-3 text-right">Qty</th>
+                      <th className="py-2 px-3">Reference / Order</th>
+                      <th className="py-2 px-3">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {ingredientTransactions.map((tx) => {
+                      const isPositive = Number(tx.quantity) > 0;
+                      return (
+                        <tr key={tx.id} className="hover:bg-canvas-subtle/40 font-mono text-[11px]">
+                          <td className="py-2.5 px-3 text-ink-secondary">{new Date(tx.created_at).toLocaleString()}</td>
+                          <td className="py-2.5 px-3 uppercase font-bold text-ink">{tx.transaction_type}</td>
+                          <td className={`py-2.5 px-3 text-right font-bold ${isPositive ? "text-emerald-500" : "text-rose-500"}`}>
+                            {isPositive ? "+" : ""}{Number(tx.quantity).toFixed(3)} {historyIngredient.unit}
+                          </td>
+                          <td className="py-2.5 px-3 text-ink-secondary">{tx.reference_id || "Manual"}</td>
+                          <td className="py-2.5 px-3 text-ink truncate max-w-xs">{tx.notes || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setHistoryIngredient(null)}
+                className="px-4 py-1.5 bg-ink text-canvas text-xs font-bold rounded cursor-pointer hover:bg-ink/90"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

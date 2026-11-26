@@ -1,12 +1,13 @@
 import uuid
 from decimal import Decimal
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.inventory import Ingredient, StockTransaction, RecipeItem
 from app.schemas.inventory import (
     IngredientCreate,
+    IngredientUpdate,
     IngredientResponse,
     StockAdjustment,
     StockTransactionResponse,
@@ -84,7 +85,7 @@ def adjust_ingredient_stock(
             db, current_user.restaurant_id, ingredient_id, adj.quantity, adj.transaction_type, adj.notes or ""
         )
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
         
     return IngredientResponse(
         id=ing.id,
@@ -98,14 +99,84 @@ def adjust_ingredient_stock(
         is_low_stock=ing.current_stock <= ing.reorder_threshold
     )
 
-@router.get("/transactions", response_model=List[StockTransactionResponse])
-def get_stock_transactions(
+@router.put("/ingredients/{ingredient_id}", response_model=IngredientResponse)
+def update_ingredient(
+    ingredient_id: str,
+    data: IngredientUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    txs = db.query(StockTransaction).filter(
+    ing = db.query(Ingredient).filter(
+        Ingredient.id == ingredient_id,
+        Ingredient.restaurant_id == current_user.restaurant_id
+    ).first()
+    if not ing:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+        
+    if data.name is not None:
+        ing.name = data.name.strip()
+    if data.unit is not None:
+        ing.unit = data.unit.strip()
+    if data.current_stock is not None:
+        ing.current_stock = data.current_stock
+    if data.reorder_threshold is not None:
+        ing.reorder_threshold = data.reorder_threshold
+    if data.cost_per_unit is not None:
+        ing.cost_per_unit = data.cost_per_unit
+    if data.supplier_name is not None:
+        ing.supplier_name = data.supplier_name.strip() if data.supplier_name else None
+        
+    db.commit()
+    db.refresh(ing)
+    return IngredientResponse(
+        id=ing.id,
+        restaurant_id=ing.restaurant_id,
+        name=ing.name,
+        unit=ing.unit,
+        current_stock=ing.current_stock,
+        reorder_threshold=ing.reorder_threshold,
+        cost_per_unit=ing.cost_per_unit,
+        supplier_name=ing.supplier_name,
+        is_low_stock=ing.current_stock <= ing.reorder_threshold
+    )
+
+@router.delete("/ingredients/{ingredient_id}")
+def delete_ingredient(
+    ingredient_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ing = db.query(Ingredient).filter(
+        Ingredient.id == ingredient_id,
+        Ingredient.restaurant_id == current_user.restaurant_id
+    ).first()
+    if not ing:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+        
+    # Check if linked to recipes
+    recipe_count = db.query(RecipeItem).filter(RecipeItem.ingredient_id == ingredient_id).count()
+    if recipe_count > 0:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot delete ingredient '{ing.name}' as it is linked to {recipe_count} recipe(s). Remove recipe links first."
+        )
+        
+    db.delete(ing)
+    db.commit()
+    return {"success": True, "message": f"Ingredient '{ing.name}' deleted successfully."}
+
+@router.get("/transactions", response_model=List[StockTransactionResponse])
+def get_stock_transactions(
+    ingredient_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(StockTransaction).filter(
         StockTransaction.restaurant_id == current_user.restaurant_id
-    ).order_by(StockTransaction.created_at.desc()).limit(100).all()
+    )
+    if ingredient_id:
+        query = query.filter(StockTransaction.ingredient_id == ingredient_id)
+    txs = query.order_by(StockTransaction.created_at.desc()).limit(100).all()
     return txs
 
 @router.get("/alerts")

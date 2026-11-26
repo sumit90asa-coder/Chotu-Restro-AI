@@ -12,6 +12,14 @@ class IngredientCreate(BaseModel):
     cost_per_unit: Decimal = Decimal("0.00")
     supplier_name: Optional[str] = None
 
+class IngredientUpdate(BaseModel):
+    name: Optional[str] = None
+    unit: Optional[str] = None
+    current_stock: Optional[Decimal] = None
+    reorder_threshold: Optional[Decimal] = None
+    cost_per_unit: Optional[Decimal] = None
+    supplier_name: Optional[str] = None
+
 class IngredientResponse(BaseModel):
     id: str
     restaurant_id: str
